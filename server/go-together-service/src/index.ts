@@ -26,14 +26,18 @@ io.on("connection", (socket) => {
     console.log("User connected");
     console.log(socket.id);
 
-    socket.on("message", (data) => {
-        console.log(data, socket.id);
-        io.emit('message', data);
+    socket.on("message", ({ message, room }) => {
+        console.log(message, socket.id, room);
+        socket.to(room).emit("message", message);
     });
 
-    socket.on("room", (room) => {
+    socket.on("joinRoom", (room) => {
         socket.join(room);
         console.log(`User joined room ${room}`);
+        socket.to(room).emit('roomData', {
+            room: room,
+            users: io.sockets.adapter.rooms.get(room)
+        });
     })
 
     socket.on('disconnect', () => {
