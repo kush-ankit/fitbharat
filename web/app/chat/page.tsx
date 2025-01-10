@@ -12,7 +12,7 @@ export default function Chat() {
     const [input, setInput] = useState<string>('');
     const socket = useContext(SocketContext);
 
-    const roomName = "1";
+    const roomName = "abc";
 
     useEffect(() => {
         if (socket) {
@@ -23,7 +23,7 @@ export default function Chat() {
 
     useEffect(() => {
         if (socket) {
-            socket.on('message', (data: string) => {
+            socket.on('message-res', (data: string) => {
                 setMessages([...messages, { sender: 'friend', content: data }]);
                 console.log(data);
             });
@@ -31,27 +31,26 @@ export default function Chat() {
                 socket.off('message');
             };
         }
-    }, [socket, messages]);
+    }, [messages, socket]);
 
     const handleSend = (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (input.trim()) {
             if (socket) {
-                socket.emit('message', { message: input, room: "1" });
+                socket.emit('message-req', { message: input, room: "1" });
             }
             setMessages([...messages, { sender: 'user', content: input }]);
             setInput('');
         }
     };
 
+
     return (
         <div className="flex flex-col h-screen bg-gray-100">
-            {/* Header */}
             <div className="bg-blue-600 text-white py-4 px-6 text-lg font-semibold">
                 Two-Person Chat
             </div>
 
-            {/* Chat Messages */}
             <div className="flex-1 overflow-y-auto p-4">
                 {messages.map((msg, index) => (
                     <div
@@ -71,7 +70,6 @@ export default function Chat() {
                 ))}
             </div>
 
-            {/* Input Field */}
             <form className="bg-white p-4 flex items-center border-t text-black" onSubmit={handleSend}>
                 <input
                     type="text"

@@ -23,18 +23,19 @@ const io = new Server(httpServer, {
 })
 
 io.on("connection", (socket) => {
+
     console.log("User connected");
     console.log(socket.id);
 
-    socket.on("message", ({ message, room }) => {
+    socket.on("message-req", ({ message, room }) => {
         console.log(message, socket.id, room);
-        socket.to(room).emit("message", message);
+        io.to(room).emit("message-res", message);
     });
 
-    socket.on("joinRoom", (room) => {
+    socket.on('join', ({name, room}, callback) => {
         socket.join(room);
         console.log(`User joined room ${room}`);
-        socket.to(room).emit('roomData', {
+        io.to(room).emit('roomData', {
             room: room,
             users: io.sockets.adapter.rooms.get(room)
         });
