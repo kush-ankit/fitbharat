@@ -115,9 +115,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   swapButton: {
-    display: "flex",
-    backgroundColor: "#666",
+    width: 40,
+    height: 40,
+    marginTop: 20,
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 20,
+    backgroundColor: "#666",
     padding: 5,
 
   },

@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Alert } from "react-native";
-import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT  } from "react-native-maps";
 import * as Location from "expo-location";
 import { useColorScheme } from "@/hooks/useColorScheme.web";
 import { IPointLocation } from "@/app/(tabs)/path";
 
 const GoogleMaps = ({ setEndLocation, setStartLocation, routeCoords }: { setEndLocation: any, setStartLocation: any, routeCoords: any }) => {
-    const [location, setLocation] = useState(null);
+    const [location, setLocation] = useState({
+        latitude: 0,
+        longitude: 0,
+    });
 
 
     useEffect(() => {
@@ -49,7 +52,7 @@ const GoogleMaps = ({ setEndLocation, setStartLocation, routeCoords }: { setEndL
         <View style={styles.container}>
             {location &&
                 <MapView
-                    provider={PROVIDER_GOOGLE}
+                    provider={PROVIDER_DEFAULT}
                     style={styles.map}
                     showsUserLocation={true}
                     followsUserLocation={true}
