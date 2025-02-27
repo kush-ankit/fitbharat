@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Alert } from "react-native";
-import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import * as Location from "expo-location";
+import { useColorScheme } from "@/hooks/useColorScheme.web";
+import { IPointLocation } from "@/app/(tabs)/path";
 
-const GoogleMaps = () => {
+const GoogleMaps = ({ setEndLocation, setStartLocation, routeCoords }: { setEndLocation: any, setStartLocation: any, routeCoords: any }) => {
     const [location, setLocation] = useState(null);
+
 
     useEffect(() => {
         const getLocation = async () => {
@@ -19,6 +22,14 @@ const GoogleMaps = () => {
                 accuracy: Location.Accuracy.BestForNavigation,
             });
             setLocation(userLocation.coords);
+            setStartLocation({
+                latitude: userLocation.coords.latitude,
+                longitude: userLocation.coords.longitude
+            });
+            setEndLocation({
+                latitude: userLocation.coords.latitude,
+                longitude: userLocation.coords.longitude
+            });
 
             // Watch for location changes
             const locationWatcher = await Location.watchPositionAsync(
@@ -36,19 +47,40 @@ const GoogleMaps = () => {
 
     return (
         <View style={styles.container}>
-            <MapView
-                provider={PROVIDER_GOOGLE}
-                style={styles.map}
-                showsUserLocation={true}
-                followsUserLocation={true}
-                initialRegion={{
-                    latitude: location?.latitude || 28.6139, // Default to New Delhi
-                    longitude: location?.longitude || 77.2090,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                }}
-            >
-            </MapView>
+            {location &&
+                <MapView
+                    provider={PROVIDER_GOOGLE}
+                    style={styles.map}
+                    showsUserLocation={true}
+                    followsUserLocation={true}
+                    initialRegion={{
+                        latitude: location.latitude,
+                        longitude: location.longitude,
+                        latitudeDelta: 0.01,
+                        longitudeDelta: 0.01,
+                    }}
+                >
+                    <Marker
+                        coordinate={location}
+                        draggable // Makes marker draggable
+                        onDragEnd={(e) => setStartLocation(e.nativeEvent.coordinate)} // Updates state
+                        title="Drag Me"
+                    />
+                    <Marker
+                        coordinate={location}
+                        draggable // Makes marker draggable
+                        onDragEnd={(e) => setEndLocation(e.nativeEvent.coordinate)} // Updates state
+                        title="Drag Me"
+                    />
+                    {routeCoords.length > 0 && (
+                        <Polyline
+                            coordinates={routeCoords}
+                            strokeWidth={4}
+                            strokeColor="blue"
+                        />
+                    )}
+                </MapView>
+            }
         </View>
     );
 };

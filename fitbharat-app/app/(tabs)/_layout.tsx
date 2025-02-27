@@ -8,7 +8,6 @@ import TabBarBackground from '@/components/ui/TabBarBackground';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import SimpleLineIcons from '@expo/vector-icons/SimpleLineIcons';
 import { FontAwesome6, Ionicons } from '@expo/vector-icons';
 
 export default function TabLayout() {
