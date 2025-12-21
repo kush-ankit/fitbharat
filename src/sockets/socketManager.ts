@@ -1,5 +1,5 @@
 import { Server, Socket } from 'socket.io';
-import socketHandler from './socketHandler';
+import socketHandler from './chatSocket';
 import locationHandler from './locationHandler';
 
 export default (io: Server) => {

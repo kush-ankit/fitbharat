@@ -1,37 +1,36 @@
 import mongoose, { Schema, Document } from 'mongoose';
-
-export interface IUser extends Document {
-    name: string;
-    userid: string;
-    email: string;
-    password: string;
-    chats: string[];
-}
+import IUser from '../types/User.types';
 
 const UserSchema: Schema = new Schema({
-    name: {
-        type: String,
-        required: true,
-    },
-    userid: {
-        type: String,
-        unique: true,
-        trim: true,
-        lowercase: true,
-        required: true,
-    },
-    email: {
+    user_id: {
         type: String,
         required: true,
         unique: true,
     },
-    password: {
+    user_name: {
         type: String,
         required: true,
     },
-    chats: {
+    user_email: {
+        type: String,
+        required: true,
+        unique: true,
+    },
+    user_password: {
+        type: String,
+        required: true,
+    },
+    user_chats: {
         type: [String], // Array of chat IDs
         default: [],
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now,
+    },
+    updatedAt: {
+        type: Date,
+        default: Date.now,
     },
 });
 

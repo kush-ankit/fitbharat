@@ -1,8 +1,6 @@
-export default interface IMessage {
-    _id: string;
-    chatId: string;
-    sender: string;
-    receiver: string;
-    text: string;
-    createdAt: Date;
+export default interface IMessage extends Document {
+    text_massage: string;
+    sender_user_id: string;
+    receiver_user_id: string;
+    created_at: Date;
 }

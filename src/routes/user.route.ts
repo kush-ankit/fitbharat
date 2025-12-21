@@ -6,6 +6,9 @@ const router = express.Router();
 router.get('/search', async (req: Request, res: Response) => {
     const query = req.query.query as string;
 
+    console.log("query", query);
+
+
     if (!query) {
         return res.status(400).json({ message: 'Search query is required' });
     }
@@ -13,10 +16,10 @@ router.get('/search', async (req: Request, res: Response) => {
     try {
         const users = await User.find({
             $or: [
-                { name: { $regex: query, $options: 'i' } },
-                { email: { $regex: query, $options: 'i' } }
+                { user_name: { $regex: query, $options: 'i' } },
+                { user_email: { $regex: query, $options: 'i' } }
             ]
-        }).select('-password');
+        }).select('-user_password');
         console.log("users", users);
 
         res.json({ users });

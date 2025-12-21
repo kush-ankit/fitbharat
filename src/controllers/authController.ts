@@ -3,27 +3,28 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import Chat from '../models/Chat';
+import IUser from '../types/User.types';
 
 const registerUser = async (req: Request, res: Response) => {
     try {
-        const { name, email, userid, password } = req.body;
+        const { user_name, user_email, user_id, user_password }: IUser = req.body;
 
         // Validate input
-        if (!name || !email || !password || !userid) {
+        if (!user_name || !user_email || !user_password || !user_id) {
             return res.status(400).json({ message: 'All fields are required' });
         }
 
         // Check if user already exists
-        const existingUser = await User.findOne({ email });
+        const existingUser = await User.findOne({ user_email });
         if (existingUser) {
             return res.status(409).json({ message: 'User already exists' });
         }
 
         // Hash the password
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const hashedPassword = await bcrypt.hash(user_password, 10);
 
         // Create and save the new user
-        const newUser = new User({ name, email, userid, password: hashedPassword });
+        const newUser = new User({ user_name, user_email, user_id, user_password: hashedPassword });
         await newUser.save();
         return res.status(201).json({ message: 'User registered successfully' });
     } catch (error: any) {
@@ -34,32 +35,32 @@ const registerUser = async (req: Request, res: Response) => {
 
 const loginUser = async (req: Request, res: Response) => {
     try {
-        const { email, password } = req.body;
+        const { user_email, user_password } = req.body;
 
-        console.log("email", email);
-        console.log("password", password);
+        console.log("email", user_email);
+        console.log("password", user_password);
 
 
         // Validate input
-        if (!email || !password) {
+        if (!user_email || !user_password) {
             return res.status(400).json({ message: 'Email and password are required' });
         }
 
         // Find the user by email
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ user_email });
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
         // Check password validity
-        const isMatch = await bcrypt.compare(password, user.password);
+        const isMatch = await bcrypt.compare(user_password, user.user_password);
         if (!isMatch) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
         // Generate JWT token
         const token = jwt.sign(
-            { id: user._id, userId: user.userid, email: user.email },
+            { user_id: user.user_id, user_email: user.user_email },
             process.env.JWT_SECRET as string,
             { expiresIn: '1d' } // Token expires in 1 day
         );
@@ -75,12 +76,7 @@ const loginUser = async (req: Request, res: Response) => {
         return res.status(200).json({
             message: 'Login successful',
             token,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                userid: user.userid,
-            },
+            user: user,
         });
     } catch (error: any) {
         console.error('Login Error:', error.message);
@@ -88,34 +84,33 @@ const loginUser = async (req: Request, res: Response) => {
     }
 };
 
-const findAllChats = async (req: Request, res: Response) => {
+const verifyToken = async (token: string) => {
     try {
-        const token = req.headers.authorization?.split(' ')[1];
-        if (!token || !process.env.JWT_SECRET) {
-            return res.status(401).json({ message: 'Missing or invalid token' });
+        if (!token) {
+            return { success: false, message: 'Unauthorized: No token provided' };
         }
 
-        const decoded: any = jwt.verify(token, process.env.JWT_SECRET);
-
-        console.log('Decoded token:', decoded);
-
-        const user = await User.findOne({ userid: decoded.userId });
-
-        console.log('user:', user);
+        const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
+        const user = await User.findOne({ user_id: decoded.user_id }).select('-password');
 
         if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+            return { success: false, message: 'Unauthorized: User not found' };
         }
 
-        const chats = await Chat.find({ chatid: { $in: user.chats } });
-        console.log('chats:', chats);
+        return { success: true, message: 'Token is valid', user };
+    } catch (error: any) {
+        console.error('Token validation error:', error.message);
 
-        return res.status(200).json({ chats });
+        if (error.name === 'TokenExpiredError') {
+            return { success: false, message: 'Unauthorized: Token has expired' };
+        }
 
-    } catch (error) {
-        console.error('Error in /getAllChats:', error);
-        return res.status(500).json({ message: 'Server error' });
+        if (error.name === 'JsonWebTokenError') {
+            return { success: false, message: 'Unauthorized: Invalid token' };
+        }
+
+        return { success: false, message: 'Internal Server Error' };
     }
 };
 
-export { registerUser, loginUser, findAllChats };
+export { registerUser, loginUser, verifyToken };

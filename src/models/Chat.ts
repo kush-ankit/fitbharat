@@ -1,11 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-
-export interface IChat extends Document {
-    chatid: string;
-    isGroup: boolean;
-    image?: string;
-    members: any[]; // Array of user objects { _id, name, email, userid }
-}
+import IChat from '../types/chat.types';
 
 const ChatSchema: Schema = new Schema({
     chatid: {
@@ -13,17 +7,13 @@ const ChatSchema: Schema = new Schema({
         unique: true,
         required: true,
     },
-    isGroup: {
-        type: Boolean,
-        default: false,
-    },
-    image: {
-        type: String,
-        default: null,
-    },
-    members: {
-        type: [Object], // Array of user objects { _id, name, email, userid }
+    chat_members_user_id: {
+        type: [String],
         required: true,
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now,
     },
 });
 
