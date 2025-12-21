@@ -32,11 +32,14 @@ export default (io: Server, socket: Socket) => {
         console.log("getChatHistory", receiver_user_id);
         const sender_user_id = user.user_id;
         try {
-            const messages = await Message.find({ sender_user_id, receiver_user_id })
-                .sort({ timestamp: -1 });
+            const messages = await Message.find({
+                $or: [
+                    { sender_user_id: sender_user_id, receiver_user_id: receiver_user_id },
+                    { sender_user_id: receiver_user_id, receiver_user_id: sender_user_id }
+                ]
+            })
+                .sort({ created_at: -1 });
             socket.emit("getChatHistoryResponse", messages.reverse());
-            console.log("messages", messages);
-
         } catch (error) {
             console.error("Error fetching chat history:", error);
         }
@@ -65,17 +68,9 @@ export default (io: Server, socket: Socket) => {
             console.error("Missing required fields:", { data });
             return;
         }
-
-        console.log("sendMessage", data);
-
         // Save to DB
         try {
-            const newMessage = new Message({
-                sender_user_id: data.sender_user_id,
-                receiver_user_id: data.receiver_user_id,
-                text_massage: data.text_massage,
-                created_at: new Date()
-            });
+            const newMessage = new Message(data);
             await newMessage.save();
 
             const receiverSocketId = userSocketMap[data.receiver_user_id];
