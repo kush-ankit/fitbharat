@@ -6,38 +6,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const Chat_1 = __importDefault(require("../models/Chat"));
 const User_1 = __importDefault(require("../models/User"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const router = express_1.default.Router();
-const getPrivateChatRoomName = (userId1, userId2) => {
-    const sortedIds = [userId1, userId2].sort();
-    return `private_${sortedIds[0]}_${sortedIds[1]}`;
-};
-const saveChatFunction = async (req, res) => {
+// create a new chat for add friend
+router.post("/addfriend", async (req, res) => {
     try {
-        const { user1, user2 } = req.body;
-        if (!user1 || !user2 ||
-            typeof user1.userid !== "string" ||
-            typeof user2.userid !== "string" ||
-            user1.userid === user2.userid) {
+        const { user, friend } = req.body;
+        console.log("user", user);
+        console.log("friend", friend);
+        if (!user || !friend ||
+            typeof user.user_id !== "string" ||
+            typeof friend.user_id !== "string" ||
+            user.user_id === friend.user_id) {
             return res.status(400).json({ message: "Invalid user data" });
         }
-        const userId1 = user1.userid;
-        const userId2 = user2.userid;
-        const chatid = getPrivateChatRoomName(userId1, userId2);
-        let chat = await Chat_1.default.findOne({ chatid });
-        console.log("Chat found:", chat);
+        const userId = user.user_id;
+        const friendId = friend.user_id;
+        const chat = await Chat_1.default.findOne({ chat_id: { $in: [userId, friendId] } });
         if (chat) {
             return res.status(400).json({ message: "Chat already exists", chat });
         }
-        chat = new Chat_1.default({
-            chatid,
-            isGroup: false,
-            image: null,
-            members: [user1, user2]
-        });
-        await chat.save();
         await Promise.all([
-            User_1.default.updateOne({ userid: userId1 }, { $addToSet: { chats: chatid } }),
-            User_1.default.updateOne({ userid: userId2 }, { $addToSet: { chats: chatid } }),
+            User_1.default.updateOne({ user_id: userId }, { $addToSet: { user_chats: friendId } }),
+            User_1.default.updateOne({ user_id: friendId }, { $addToSet: { user_chats: userId } }),
         ]);
         return res.status(200).json({ message: "Chat created", chat });
     }
@@ -45,43 +36,27 @@ const saveChatFunction = async (req, res) => {
         console.error("Error creating chat:", error);
         return res.status(500).json({ message: "Server error" });
     }
-};
-/**
- * @swagger
- * tags:
- *   name: Chat
- *   description: Chat management
- */
-/**
- * @swagger
- * /chat/private:
- *   post:
- *     summary: Create or retrieve a private chat
- *     tags: [Chat]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               user1:
- *                 type: object
- *                 properties:
- *                   userid:
- *                     type: string
- *               user2:
- *                 type: object
- *                 properties:
- *                   userid:
- *                     type: string
- *     responses:
- *       200:
- *         description: Chat created or retrieved
- *       400:
- *         description: Invalid user data or chat already exists
- *       500:
- *         description: Server error
- */
-router.post("/private", saveChatFunction);
+});
+router.get('/getAllChatsOfUser', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token || !process.env.JWT_SECRET) {
+            return res.status(401).json({ message: 'Missing or invalid token' });
+        }
+        const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
+        console.log('Decoded token:', decoded);
+        const user = await User_1.default.findOne({ userid: decoded.userId });
+        console.log('user:', user);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        const chats = await Chat_1.default.find({ chat_id: { $in: user.chats } });
+        console.log('chats:', chats);
+        return res.status(200).json({ chats });
+    }
+    catch (error) {
+        console.error('Error in /getAllChatsOfUser:', error);
+        return res.status(500).json({ message: 'Server error' });
+    }
+});
 exports.default = router;

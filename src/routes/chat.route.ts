@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import Chat from '../models/Chat';
 import User from '../models/User';
-import IUser from '../types/User.types';
+import IUser from '../types/user.types';
 import jwt from 'jsonwebtoken';
 
 const router = express.Router();

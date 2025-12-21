@@ -3,27 +3,26 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.findAllChats = exports.loginUser = exports.registerUser = void 0;
+exports.verifyToken = exports.loginUser = exports.registerUser = void 0;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const User_1 = __importDefault(require("../models/User"));
-const Chat_1 = __importDefault(require("../models/Chat"));
 const registerUser = async (req, res) => {
     try {
-        const { name, email, userid, password } = req.body;
+        const { user_name, user_email, user_id, user_password } = req.body;
         // Validate input
-        if (!name || !email || !password || !userid) {
+        if (!user_name || !user_email || !user_password || !user_id) {
             return res.status(400).json({ message: 'All fields are required' });
         }
         // Check if user already exists
-        const existingUser = await User_1.default.findOne({ email });
+        const existingUser = await User_1.default.findOne({ user_email });
         if (existingUser) {
             return res.status(409).json({ message: 'User already exists' });
         }
         // Hash the password
-        const hashedPassword = await bcryptjs_1.default.hash(password, 10);
+        const hashedPassword = await bcryptjs_1.default.hash(user_password, 10);
         // Create and save the new user
-        const newUser = new User_1.default({ name, email, userid, password: hashedPassword });
+        const newUser = new User_1.default({ user_name, user_email, user_id, user_password: hashedPassword });
         await newUser.save();
         return res.status(201).json({ message: 'User registered successfully' });
     }
@@ -35,32 +34,37 @@ const registerUser = async (req, res) => {
 exports.registerUser = registerUser;
 const loginUser = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { user_email, user_password } = req.body;
+        console.log("email", user_email);
+        console.log("password", user_password);
         // Validate input
-        if (!email || !password) {
+        if (!user_email || !user_password) {
             return res.status(400).json({ message: 'Email and password are required' });
         }
         // Find the user by email
-        const user = await User_1.default.findOne({ email });
+        const user = await User_1.default.findOne({ user_email });
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
         // Check password validity
-        const isMatch = await bcryptjs_1.default.compare(password, user.password);
+        const isMatch = await bcryptjs_1.default.compare(user_password, user.user_password);
         if (!isMatch) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
         // Generate JWT token
-        const token = jsonwebtoken_1.default.sign({ id: user._id, userId: user.userid, email: user.email }, process.env.JWT_SECRET);
+        const token = jsonwebtoken_1.default.sign({ user_id: user.user_id, user_email: user.user_email }, process.env.JWT_SECRET, { expiresIn: '1d' } // Token expires in 1 day
+        );
+        // Set cookie
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+            maxAge: 24 * 60 * 60 * 1000, // 1 day
+            sameSite: 'strict'
+        });
         return res.status(200).json({
             message: 'Login successful',
             token,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                userid: user.userid,
-            },
+            user: user,
         });
     }
     catch (error) {
@@ -69,26 +73,27 @@ const loginUser = async (req, res) => {
     }
 };
 exports.loginUser = loginUser;
-const findAllChats = async (req, res) => {
+const verifyToken = async (token) => {
     try {
-        const token = req.headers.authorization?.split(' ')[1];
-        if (!token || !process.env.JWT_SECRET) {
-            return res.status(401).json({ message: 'Missing or invalid token' });
+        if (!token) {
+            return { success: false, message: 'Unauthorized: No token provided' };
         }
         const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET);
-        console.log('Decoded token:', decoded);
-        const user = await User_1.default.findOne({ userid: decoded.userId });
-        console.log('user:', user);
+        const user = await User_1.default.findOne({ user_id: decoded.user_id }).select('-password');
         if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+            return { success: false, message: 'Unauthorized: User not found' };
         }
-        const chats = await Chat_1.default.find({ chatid: { $in: user.chats } });
-        console.log('chats:', chats);
-        return res.status(200).json({ chats });
+        return { success: true, message: 'Token is valid', user };
     }
     catch (error) {
-        console.error('Error in /getAllChats:', error);
-        return res.status(500).json({ message: 'Server error' });
+        console.error('Token validation error:', error.message);
+        if (error.name === 'TokenExpiredError') {
+            return { success: false, message: 'Unauthorized: Token has expired' };
+        }
+        if (error.name === 'JsonWebTokenError') {
+            return { success: false, message: 'Unauthorized: Invalid token' };
+        }
+        return { success: false, message: 'Internal Server Error' };
     }
 };
-exports.findAllChats = findAllChats;
+exports.verifyToken = verifyToken;

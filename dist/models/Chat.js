@@ -40,17 +40,13 @@ const ChatSchema = new mongoose_1.Schema({
         unique: true,
         required: true,
     },
-    isGroup: {
-        type: Boolean,
-        default: false,
-    },
-    image: {
-        type: String,
-        default: null,
-    },
-    members: {
-        type: [Object], // Array of user objects { _id, name, email, userid }
+    chat_members_user_id: {
+        type: [String],
         required: true,
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now,
     },
 });
 const Chat = mongoose_1.default.models.Chat || mongoose_1.default.model('Chat', ChatSchema);

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import Chat from '../models/Chat';
-import IUser from '../types/User.types';
+import IUser from '../types/user.types';
 
 const registerUser = async (req: Request, res: Response) => {
     try {
