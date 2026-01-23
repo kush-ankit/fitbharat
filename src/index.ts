@@ -90,6 +90,4 @@ socketManager(io);
 
 const PORT = process.env.PORT || 3000;
 
-server.listen(Number(PORT), serverIP(), () => {
-    console.log(`Server running at http://${serverIP()}:${PORT}`);
-});
+server.listen(PORT);
