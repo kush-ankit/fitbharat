@@ -62,14 +62,14 @@ const loginUser = async (req: Request, res: Response) => {
         const token = jwt.sign(
             { user_id: user.user_id, user_email: user.user_email },
             process.env.JWT_SECRET as string,
-            { expiresIn: '1d' } // Token expires in 1 day
+            { expiresIn: '30d' } // Token expires in 30 days
         );
 
         // Set cookie
         res.cookie('token', token, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-            maxAge: 24 * 60 * 60 * 1000, // 1 day
+            maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
             sameSite: 'strict'
         });
 

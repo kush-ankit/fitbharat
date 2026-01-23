@@ -47,11 +47,13 @@ mongoose.connect(process.env.MONGO_URI || '')
     .then(() => console.log('✅ MongoDB connected'))
     .catch((err) => console.error('❌ MongoDB error:', err));
 
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
+
 
 // Routes
 app.use('/auth', authRoutes);
@@ -59,10 +61,8 @@ app.use('/users', userRoutes);
 app.use('/chat', chatRoutes);
 app.use('/room', roomRoutes);
 app.use('/api/paths', pathRoutes);
-
-
-
 app.use('/api/groups', groupRoutes);
+
 
 // Socket.io Auth Middleware
 io.use(async (socket: Socket, next: (err?: Error) => void) => {
@@ -90,4 +90,6 @@ socketManager(io);
 
 const PORT = process.env.PORT || 3000;
 
-server.listen(PORT);
+server.listen(Number(PORT), serverIP(), () => {
+    console.log(`Server running at http://${serverIP()}:${PORT}`);
+});

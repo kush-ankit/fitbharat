@@ -9,6 +9,7 @@ const router = express.Router();
 router.post('/validate', async (req: Request, res: Response) => {
     const token = req.body.token || req.cookies?.token;
     const result = await verifyToken(token);
+    console.log("Token validation result:", result);
     if (result.success) {
         return res.status(200).json({ message: 'Token is valid', user: result.user });
     } else {
