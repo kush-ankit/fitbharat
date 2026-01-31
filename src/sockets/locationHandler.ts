@@ -17,10 +17,11 @@ const rooms: { [roomCode: string]: RoomData } = {}; // In-memory storage for roo
 export default (io: Server, socket: Socket) => {
     console.log("🟢 Location Handler: User connected:", socket.id);
 
-    socket.on("join-room", ({ roomCode, userId }: { roomCode: string; userId: string }) => {
+    socket.on("join-room", ({ roomCode }: { roomCode: string; }) => {
         // Use authenticated user ID if available, otherwise fallback to payload (or enforce auth)
         const authenticatedUser = (socket as any).user;
-        const finalUserId = authenticatedUser ? authenticatedUser.userid : userId;
+        if (!authenticatedUser) return socket.emit('error', { message: 'Unauthorized' });
+        const finalUserId = authenticatedUser.user_id;
 
         console.log(`User ${finalUserId} joined room ${roomCode}`);
 

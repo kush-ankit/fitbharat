@@ -1,32 +1,27 @@
-import express, { Request, Response } from 'express';
-import User from '../models/User';
+import express from 'express';
+import { searchUsers, getHistory, getProfile, updateProfile, getUserProfile } from '../controllers/user.controller';
+import { verifyToken } from '../controllers/authController';
+
 
 const router = express.Router();
 
-router.get('/search', async (req: Request, res: Response) => {
-    const query = req.query.query as string;
-
-    console.log("query", query);
-
-
-    if (!query) {
-        return res.status(400).json({ message: 'Search query is required' });
+// Auth middleware for profile management
+const authMiddleware = async (req: any, res: any, next: any) => {
+    const token = req.headers.authorization?.split(' ')[1] || req.cookies?.token;
+    if (!token) return res.status(401).json({ message: 'No token' });
+    const result = await verifyToken(token);
+    if (result.success) {
+        req.user = result.user;
+        next();
+    } else {
+        res.status(401).json({ message: 'Invalid token' });
     }
+};
 
-    try {
-        const users = await User.find({
-            $or: [
-                { user_name: { $regex: query, $options: 'i' } },
-                { user_email: { $regex: query, $options: 'i' } }
-            ]
-        }).select('-user_password');
-        console.log("users", users);
-
-        res.json({ users });
-    } catch (err) {
-        console.error('User search error:', err);
-        res.status(500).json({ message: 'Internal server error' });
-    }
-});
+router.get('/profile', authMiddleware, getProfile);
+router.put('/profile', authMiddleware, updateProfile);
+router.get('/search', searchUsers);
+router.get('/history', getHistory);
+router.get('/:userId', getUserProfile);
 
 export default router;

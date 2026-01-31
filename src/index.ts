@@ -3,6 +3,7 @@ dotenv.config();
 
 import express, { Request, Response, NextFunction } from 'express';
 import http from 'http';
+import { errorHandler } from './middlewares/errorHandler';
 import { Server, Socket } from 'socket.io';
 import cors from 'cors';
 import mongoose from 'mongoose';
@@ -15,6 +16,11 @@ import authRoutes from './routes/auth.route';
 import chatRoutes from './routes/chat.route';
 import userRoutes from './routes/user.route';
 import groupRoutes from './routes/group.route';
+import friendRoutes from './routes/friend.route';
+import activityRoutes from './routes/activity.route';
+import leaderboardRoutes from './routes/leaderboard.route';
+import notificationRoutes from './routes/notification.route';
+import challengeRoutes from './routes/challenge.route';
 import socketManager from './sockets/socketManager';
 import { verifyToken } from './controllers/authController';
 
@@ -62,6 +68,14 @@ app.use('/chat', chatRoutes);
 app.use('/room', roomRoutes);
 app.use('/api/paths', pathRoutes);
 app.use('/api/groups', groupRoutes);
+app.use('/friends', friendRoutes);
+app.use('/activities', activityRoutes);
+app.use('/leaderboards', leaderboardRoutes);
+app.use('/notifications', notificationRoutes);
+app.use('/challenges', challengeRoutes);
+
+// Error Handling Middleware
+app.use(errorHandler);
 
 
 // Socket.io Auth Middleware
@@ -90,4 +104,6 @@ socketManager(io);
 
 const PORT = process.env.PORT || 3000;
 
-server.listen(PORT);
+server.listen(Number(PORT), serverIP(), () => {
+    console.log(`Server running at http://${serverIP()}:${PORT}`);
+});
