@@ -24,18 +24,6 @@ const UserSchema: Schema = new Schema({
         type: [String], // Array of chat IDs
         default: [],
     },
-    stats: {
-        totalDistance: { type: Number, default: 0 },
-        racesWon: { type: Number, default: 0 },
-    },
-    bio: { type: String, default: '' },
-    avatarUrl: { type: String, default: '' },
-    weight: { type: Number, default: 0 },
-    pushToken: { type: String, default: '' }, // Expo Push Token
-    friends: {
-        type: [String], // Array of user_ids
-        default: [],
-    },
     createdAt: {
         type: Date,
         default: Date.now,

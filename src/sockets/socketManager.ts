@@ -1,7 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import socketHandler from './chatSocket';
 import locationHandler from './locationHandler';
-import raceHandler from './raceHandler';
 
 export default (io: Server) => {
     io.on('connection', (socket: Socket) => {
@@ -12,9 +11,6 @@ export default (io: Server) => {
 
         // Attach Location/Room Logic
         locationHandler(io, socket);
-
-        // Attach Race Logic
-        raceHandler(io, socket);
 
         socket.on('disconnect', () => {
             console.log(`❌ Client disconnected: ${socket.id}`);

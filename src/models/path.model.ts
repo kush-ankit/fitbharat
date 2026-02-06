@@ -1,32 +1,20 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface ILocation {
-    type: string;
-    coordinates: [number, number];
-}
-
-export interface IRoute {
-    type: string;
-    coordinates: [number, number][];
-}
-
 export interface IPath extends Document {
+    startLocation: {
+        type: 'Point';
+        coordinates: number[];
+    };
+    endLocation: {
+        type: 'Point';
+        coordinates: number[];
+    };
+    route: {
+        type: 'LineString';
+        coordinates: number[][];
+    };
     pathName: string;
-    description: string;
-    startLocation: ILocation;
-    endLocation: ILocation;
-    route: IRoute;
-    // Optional/Mock fields for UI
-    totalDistance: number; // In meters
-    distance?: string;
-    unit?: string;
-    time?: string;
-    pace?: string;
-    calories?: string;
-    locationName?: string;
-    locationAddress?: string;
-    rating?: number;
-    center?: { latitude: number; longitude: number; latitudeDelta?: number; longitudeDelta?: number };
+    description?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -54,21 +42,6 @@ const PathSchema: Schema = new Schema(
             type: String,
             required: false,
         },
-        distance: { type: String },
-        totalDistance: { type: Number, required: true, default: 0 },
-        unit: { type: String },
-        time: { type: String },
-        pace: { type: String },
-        calories: { type: String },
-        locationName: { type: String },
-        locationAddress: { type: String },
-        rating: { type: Number },
-        center: {
-            latitude: { type: Number },
-            longitude: { type: Number },
-            latitudeDelta: { type: Number },
-            longitudeDelta: { type: Number }
-        }
     },
     { timestamps: true }
 );
