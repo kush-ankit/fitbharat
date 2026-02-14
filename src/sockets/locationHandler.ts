@@ -1,4 +1,5 @@
 import { Namespace, Server, Socket } from 'socket.io';
+import { Path } from '../models/path.model';
 
 interface UserLocation {
     socketId: string;
@@ -12,6 +13,7 @@ interface RoomData {
     participants: { [userId: string]: UserLocation };
     adminId: string;
     roomName: string;
+    pathId?: string;
 }
 
 const rooms: { [roomCode: string]: RoomData } = {}; // In-memory storage for room users and locations
@@ -20,7 +22,7 @@ export default (locationIO: Namespace, socket: Socket) => {
     console.log("🟢 Location Handler: User connected:", socket.id);
 
 
-    socket.on("create-run", ({ roomCode, roomName }: { roomCode: string, roomName: string }) => {
+    socket.on("create-run", ({ roomCode, roomName, pathId }: { roomCode: string, roomName: string, pathId?: string }) => {
         // Use authenticated user ID if available
         const authenticatedUser = (socket as any).user;
 
@@ -39,7 +41,8 @@ export default (locationIO: Namespace, socket: Socket) => {
         rooms[roomCode] = {
             participants: {},
             adminId: userId,
-            roomName: roomName
+            roomName: roomName,
+            pathId: pathId,
         };
 
         rooms[roomCode].participants[userId] = {
@@ -96,13 +99,14 @@ export default (locationIO: Namespace, socket: Socket) => {
         });
     });
 
-    socket.on("start-run", ({ roomCode }: { roomCode: string }) => {
-        if (rooms[roomCode] && rooms[roomCode].adminId === (socket as any).user.user_id) {
+    socket.on("start-run", async ({ roomCode }: { roomCode: string }) => {
+        if (rooms[roomCode]) {
             locationIO.to(roomCode).emit("run-started", {
                 roomCode,
                 roomName: rooms[roomCode].roomName,
                 adminId: rooms[roomCode].adminId,
-                participants: Object.values(rooms[roomCode].participants)
+                participants: Object.values(rooms[roomCode].participants),
+                pathId: rooms[roomCode].pathId,
             });
         }
     });

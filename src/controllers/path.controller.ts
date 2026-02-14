@@ -54,4 +54,46 @@ const getNearbyPaths = async (req: Request, res: Response) => {
     }
 };
 
-export { savePath, getNearbyPaths };
+const getPathById = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+
+        if (!id) {
+            return res.status(400).json({ error: "Path ID is required" });
+        }
+
+        const path = await Path.findById(id);
+
+        if (!path) {
+            return res.status(404).json({ error: "Path not found" });
+        }
+
+        res.status(200).json({
+            message: "Path fetched successfully",
+            path: {
+                id: path._id,
+                pathName: path.pathName,
+                description: path.description,
+                startLocation: {
+                    latitude: path.startLocation.coordinates[1],
+                    longitude: path.startLocation.coordinates[0],
+                },
+                endLocation: {
+                    latitude: path.endLocation.coordinates[1],
+                    longitude: path.endLocation.coordinates[0],
+                },
+                route: path.route.coordinates.map((coord: number[]) => ({
+                    latitude: coord[1],
+                    longitude: coord[0],
+                })),
+                createdAt: path.createdAt,
+                updatedAt: path.updatedAt,
+            },
+        });
+    } catch (error) {
+        console.error("Error fetching path by ID:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+};
+
+export { savePath, getNearbyPaths, getPathById };

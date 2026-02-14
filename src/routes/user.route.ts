@@ -3,6 +3,21 @@ import User from '../models/User';
 
 const router = express.Router();
 
+// GET /leaderboard - Fetch top users by points/distance
+router.get('/leaderboard', async (req: Request, res: Response) => {
+    try {
+        const users = await User.find({})
+            .select('user_name points distance user_image')
+            .sort({ points: -1, distance: -1 })
+            .limit(20);
+        
+        res.json({ users });
+    } catch (err) {
+        console.error('Leaderboard error:', err);
+        res.status(500).json({ message: 'Error fetching leaderboard' });
+    }
+});
+
 router.get('/search', async (req: Request, res: Response) => {
     const query = req.query.query as string;
 
