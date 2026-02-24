@@ -15,6 +15,7 @@ import authRoutes from './routes/auth.route';
 import chatRoutes from './routes/chat.route';
 import userRoutes from './routes/user.route';
 import groupRoutes from './routes/group.route';
+import aiCheckinRoutes from './routes/aiCheckin.route';
 import socketManager from './sockets/socketManager';
 import { verifyToken } from './controllers/authController';
 
@@ -62,6 +63,7 @@ app.use('/chat', chatRoutes);
 app.use('/room', roomRoutes);
 app.use('/api/paths', pathRoutes);
 app.use('/api/groups', groupRoutes);
+app.use('/api/ai-checkin', aiCheckinRoutes);
 
 
 // Socket.io Auth Middleware
