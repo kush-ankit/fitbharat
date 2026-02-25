@@ -2,7 +2,7 @@ export type AiCheckinStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
 export interface AiCheckinBodySegment {
   name: string;
-  confidence: number; // 0..1
+  confidence: number;
   note?: string;
 }
 
@@ -14,15 +14,14 @@ export interface AiCheckinRecommendations {
 
 export interface AiCheckinModelOutput {
   modelVersion: string;
-  generatedAt: string; // ISO date-time
+  generatedAt: string;
   summary: string;
   bodyFatEstimate?: {
     value: number;
     unit: '%';
-    confidence: number; // 0..1
+    confidence: number;
   };
   segments: AiCheckinBodySegment[];
-  recommendations: AiCheckinRecommendations;
   warnings?: string[];
 }
 
@@ -34,5 +33,6 @@ export interface AiCheckinRecord {
   updatedAt: string;
   source: 'image-upload';
   result?: AiCheckinModelOutput;
+  recommendations?: AiCheckinRecommendations;
   error?: string;
 }

@@ -50,7 +50,17 @@ mongoose.connect(process.env.MONGO_URI || '')
 
 
 // Middleware
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '*').split(',').map((x) => x.trim()).filter(Boolean);
+app.use(
+    cors({
+        origin: (origin, callback) => {
+            if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error('Not allowed by CORS'));
+        },
+    })
+);
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));

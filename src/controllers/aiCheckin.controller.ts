@@ -1,36 +1,94 @@
 import { Request, Response } from 'express';
-import crypto from 'crypto';
-import { AiCheckinRecord } from '../ai/schema';
+import fs from 'fs';
+import jwt from 'jsonwebtoken';
+import path from 'path';
+import AiCheckin from '../models/aiCheckin.model';
+import { analyzeProgressImage } from '../ai/provider';
+import { buildRecommendations } from '../ai/recommendationEngine';
 
-const checkinStore = new Map<string, AiCheckinRecord>();
+const uploadsDir = path.resolve(process.cwd(), 'uploads', 'ai-checkins');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const getUserIdFromRequest = (req: Request): string | undefined => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return undefined;
+
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+    return decoded?.user_id || decoded?.id;
+  } catch {
+    return undefined;
+  }
+};
+
+const runAnalysisInBackground = async (id: string) => {
+  const checkin = await AiCheckin.findById(id);
+  if (!checkin) return;
+
+  try {
+    checkin.status = 'processing';
+    await checkin.save();
+
+    const { raw, structured } = await analyzeProgressImage(checkin.imagePath);
+    const recommendations = buildRecommendations(structured);
+
+    checkin.status = 'completed';
+    checkin.rawModelOutput = raw;
+    checkin.result = structured;
+    checkin.recommendations = recommendations;
+    checkin.modelProvider = process.env.AI_CHECKIN_PROVIDER || 'fallback';
+    checkin.modelName = process.env.AI_CHECKIN_MODEL || 'fallback-local-v1';
+    await checkin.save();
+  } catch (error: any) {
+    checkin.status = 'failed';
+    checkin.error = error?.message || 'AI analysis failed';
+    await checkin.save();
+  }
+};
 
 export const uploadAiCheckin = async (req: Request, res: Response) => {
-  const contentType = req.headers['content-type'] || '';
+  const file = (req as any).file as Express.Multer.File | undefined;
+  if (!file) {
+    return res.status(400).json({ message: 'Image file is required (multipart/form-data, field name: image).' });
+  }
 
-  const id = `chk_${crypto.randomUUID()}`;
-  const now = new Date().toISOString();
+  const consentAccepted = String(req.body?.consentAccepted || 'false') === 'true';
+  const disclaimerAccepted = String(req.body?.disclaimerAccepted || 'false') === 'true';
 
-  const record: AiCheckinRecord = {
-    id,
+  if (!consentAccepted || !disclaimerAccepted) {
+    return res.status(400).json({ message: 'Consent and disclaimer acceptance are required.' });
+  }
+
+  const userId = getUserIdFromRequest(req);
+
+  const created = await AiCheckin.create({
+    userId,
     status: 'queued',
-    createdAt: now,
-    updatedAt: now,
     source: 'image-upload',
-  };
+    imagePath: file.path,
+    mimeType: file.mimetype,
+    fileSize: file.size,
+    consentAccepted,
+    disclaimerAccepted,
+    modelProvider: process.env.AI_CHECKIN_PROVIDER || 'openai',
+    modelName: process.env.AI_CHECKIN_MODEL || 'gpt-4.1-mini',
+  });
 
-  checkinStore.set(id, record);
+  void runAnalysisInBackground(String(created._id));
 
   return res.status(202).json({
-    checkinId: id,
-    status: record.status,
-    acceptedContentType: contentType,
-    note: 'Phase 0 placeholder: upload is accepted but not yet processed.',
+    checkinId: created._id,
+    status: created.status,
+    message: 'Upload accepted and queued for analysis.',
   });
 };
 
 export const getAiCheckinById = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const record = checkinStore.get(id);
+  const record = await AiCheckin.findById(id).lean();
 
   if (!record) {
     return res.status(404).json({
@@ -39,5 +97,14 @@ export const getAiCheckinById = async (req: Request, res: Response) => {
     });
   }
 
-  return res.status(200).json(record);
+  return res.status(200).json({
+    id: record._id,
+    userId: record.userId,
+    status: record.status,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    result: record.result,
+    recommendations: record.recommendations,
+    error: record.error,
+  });
 };
