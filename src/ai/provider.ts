@@ -1,5 +1,5 @@
 import fs from 'fs/promises';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export interface StructuredAiInsights {
   modelVersion: string;
@@ -23,21 +23,23 @@ const parseJsonSafe = (text: string): any => {
 };
 
 export const analyzeProgressImage = async (imagePath: string): Promise<{ raw: unknown; structured: StructuredAiInsights }> => {
-  const provider = process.env.AI_CHECKIN_PROVIDER || 'openai';
-  const model = process.env.AI_CHECKIN_MODEL || 'gpt-4.1-mini';
+  const provider = process.env.AI_CHECKIN_PROVIDER || 'gemini';
+  const model = process.env.AI_CHECKIN_MODEL || 'gemini-3.1-pro-preview';
 
-  if (provider !== 'openai' || !process.env.OPENAI_API_KEY) {
+  if (provider !== 'gemini' || !process.env.GEMINI_API_KEY) {
     const fallback: StructuredAiInsights = {
       modelVersion: 'fallback-local-v1',
       generatedAt: new Date().toISOString(),
       summary: 'AI provider not configured. Stored upload successfully; analysis fallback was used.',
       segments: [],
-      warnings: ['Provider not configured. Set OPENAI_API_KEY and AI_CHECKIN_PROVIDER=openai.'],
+      warnings: ['Provider not configured. Set GEMINI_API_KEY and AI_CHECKIN_PROVIDER=gemini.'],
     };
     return { raw: { fallback: true }, structured: fallback };
   }
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const gemini = genAI.getGenerativeModel({ model });
+
   const buffer = await fs.readFile(imagePath);
   const base64 = buffer.toString('base64');
   const mime = imagePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
@@ -51,22 +53,12 @@ export const analyzeProgressImage = async (imagePath: string): Promise<{ raw: un
 }
 Rules: Be uncertainty-aware. Do not provide medical diagnosis. Keep summary <= 60 words.`;
 
-  const resp = await client.responses.create({
-    model,
-    temperature: 0.2,
-    max_output_tokens: 500,
-    input: [
-      {
-        role: 'user',
-        content: [
-          { type: 'input_text', text: prompt },
-          { type: 'input_image', image_url: `data:${mime};base64,${base64}`, detail: 'low' },
-        ],
-      },
-    ],
-  });
+  const resp = await gemini.generateContent([
+    { text: prompt },
+    { inlineData: { mimeType: mime, data: base64 } },
+  ]);
 
-  const rawText = resp.output_text || '{}';
+  const rawText = resp.response.text() || '{}';
   const parsed = parseJsonSafe(rawText) || {};
 
   const structured: StructuredAiInsights = {
@@ -96,5 +88,5 @@ Rules: Be uncertainty-aware. Do not provide medical diagnosis. Keep summary <= 6
     warnings: Array.isArray(parsed.warnings) ? parsed.warnings.map((w: any) => String(w)) : [],
   };
 
-  return { raw: { rawText, responseId: resp.id }, structured };
+  return { raw: { rawText, model }, structured };
 };

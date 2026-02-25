@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import multer from 'multer';
 import path from 'path';
-import { getAiCheckinById, uploadAiCheckin } from '../controllers/aiCheckin.controller';
+import { getAiCheckinById, getLatestAiCheckin, uploadAiCheckin } from '../controllers/aiCheckin.controller';
 import { createInMemoryRateLimit } from '../middlewares/rateLimit';
 
 const router = express.Router();
@@ -35,6 +35,7 @@ const upload = multer({
 const aiUploadLimiter = createInMemoryRateLimit(10, 15 * 60 * 1000);
 
 router.post('/upload', aiUploadLimiter, upload.single('image'), uploadAiCheckin);
+router.get('/latest', getLatestAiCheckin);
 router.get('/:id', getAiCheckinById);
 
 export default router;
