@@ -129,8 +129,12 @@ export default (locationIO: Namespace, socket: Socket) => {
             const usersInRoom = room.participants;
             for (const userId in usersInRoom) {
                 if (usersInRoom[userId].socketId === socket.id) {
+                    const leftUser = { ...usersInRoom[userId] };
                     delete usersInRoom[userId];
                     console.log(`Removed user ${userId} from room ${roomCode}`);
+
+                    // Notify remaining participants about the user who left
+                    locationIO.to(roomCode).emit("user-left", leftUser);
 
                     // Update room members
                     locationIO.to(roomCode).emit("room-users", Object.values(usersInRoom));

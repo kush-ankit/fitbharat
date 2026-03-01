@@ -3,7 +3,7 @@ import { Path } from '../models/path.model';
 
 const savePath = async (req: Request, res: Response) => {
     try {
-        const { startLocation, endLocation, route, name, description } = req.body;
+        const { startLocation, endLocation, route, name, description, location, distance, rating, tags, image } = req.body;
 
         if (!startLocation || !endLocation || !route || !name) {
             return res.status(400).json({ error: "Missing required fields" });
@@ -15,6 +15,11 @@ const savePath = async (req: Request, res: Response) => {
             route: { type: "LineString", coordinates: route.map((point: any) => [point.longitude, point.latitude]) },
             pathName: name,
             description: description || "This is a path description",
+            location: location || "Unknown Location",
+            distance: distance || "0.0",
+            rating: rating ?? 4.5,
+            tags: tags || [],
+            image: image || { uri: "" },
         });
 
         await newPath.save();
@@ -47,7 +52,32 @@ const getNearbyPaths = async (req: Request, res: Response) => {
             },
         });
 
-        res.status(200).json({ message: "Nearby Paths Found", paths: nearbyPaths });
+        const formattedPaths = nearbyPaths.map((path) => ({
+            id: path._id,
+            name: path.pathName,
+            location: path.location || path.description || 'Unknown Location',
+            distance: path.distance || '0.0',
+            rating: path.rating ?? 4.5,
+            tags: path.tags || [],
+            image: path.image || { uri: '' },
+            description: path.description,
+            startLocation: {
+                latitude: path.startLocation.coordinates[1],
+                longitude: path.startLocation.coordinates[0],
+            },
+            endLocation: {
+                latitude: path.endLocation.coordinates[1],
+                longitude: path.endLocation.coordinates[0],
+            },
+            route: path.route.coordinates.map((coord: number[]) => ({
+                latitude: coord[1],
+                longitude: coord[0],
+            })),
+            createdAt: path.createdAt,
+            updatedAt: path.updatedAt,
+        }));
+
+        res.status(200).json({ message: "Nearby Paths Found", paths: formattedPaths });
     } catch (error) {
         console.error("Error fetching nearby paths:", error);
         res.status(500).json({ error: "Internal server error" });
@@ -72,6 +102,12 @@ const getPathById = async (req: Request, res: Response) => {
             message: "Path fetched successfully",
             path: {
                 id: path._id,
+                name: path.pathName,
+                location: path.location || path.description || 'Unknown Location',
+                distance: path.distance || '0.0',
+                rating: path.rating ?? 4.5,
+                tags: path.tags || [],
+                image: path.image || { uri: '' },
                 pathName: path.pathName,
                 description: path.description,
                 startLocation: {

@@ -15,6 +15,11 @@ export interface IPath extends Document {
     };
     pathName: string;
     description?: string;
+    location?: string;
+    distance?: string;
+    rating?: number;
+    tags?: string[];
+    image?: { uri: string };
     createdAt: Date;
     updatedAt: Date;
 }
@@ -41,6 +46,25 @@ const PathSchema: Schema = new Schema(
         description: {
             type: String,
             required: false,
+        },
+        location: {
+            type: String,
+            required: false,
+        },
+        distance: {
+            type: String,
+            required: false,
+        },
+        rating: {
+            type: Number,
+            required: false,
+        },
+        tags: {
+            type: [String],
+            default: [],
+        },
+        image: {
+            uri: { type: String, required: false },
         },
     },
     { timestamps: true }
