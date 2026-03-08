@@ -105,6 +105,6 @@ socketManager(io);
 
 const PORT = process.env.PORT || 3000;
 
-server.listen(Number(PORT), '10.178.27.25', () => {
-    console.log(`Server is running on http://10.178.27.25:${PORT}`);
+server.listen(Number(PORT), '10.126.82.25', () => {
+    console.log(`Server is running on http://10.126.82.25:${PORT}`);
 });
