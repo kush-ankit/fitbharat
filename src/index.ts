@@ -34,6 +34,15 @@ const io = new Server(server, {
 });
 
 // 5. Database Connection
+import dns from 'dns';
+try {
+    dns.setDefaultResultOrder('ipv4first');
+    // Using Google DNS to avoid querySrv ECONNREFUSED on some networks
+    dns.setServers(['8.8.8.8', '8.8.4.4']);
+} catch (e) {
+    console.error('DNS configuration error:', e);
+}
+
 mongoose
     .connect(process.env.MONGO_URI || '')
     .then(() => console.log('✅ MongoDB connected'))
