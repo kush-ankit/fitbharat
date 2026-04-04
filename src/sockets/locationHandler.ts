@@ -1,5 +1,6 @@
 import { Namespace, Server, Socket } from 'socket.io';
 import { Path } from '../models/path.model';
+import logger from '../utils/logger';
 
 interface UserLocation {
     socketId: string;
@@ -19,11 +20,13 @@ interface RoomData {
 const rooms: { [roomCode: string]: RoomData } = {}; // In-memory storage for room users and locations
 
 export default (locationIO: Namespace, socket: Socket) => {
-    console.log("🟢 Location Handler: User connected:", socket.id);
+    logger.debug(`🟢 Location Handler: User connected: ${socket.id}`);
 
-
-    socket.on("create-run", ({ roomCode, roomName, pathId }: { roomCode: string, roomName: string, pathId?: string }) => {
-        // Use authenticated user ID if available
+    // ─────────────────────────────────────────────────────────
+    // CREATE ROOM — supports both kebab-case (legacy) and
+    // camelCase (React Native mobile app) event names
+    // ─────────────────────────────────────────────────────────
+    const handleCreateRoom = ({ roomCode, roomName, pathId }: { roomCode: string; roomName: string; pathId?: string }) => {
         const authenticatedUser = (socket as any).user;
 
         if (!authenticatedUser) {
@@ -31,8 +34,8 @@ export default (locationIO: Namespace, socket: Socket) => {
             return;
         }
 
-        const userId = authenticatedUser.user_id;
-        // Ensure uniqueness (simple retry logic)
+        const userId = authenticatedUser.user_id || authenticatedUser.uid;
+
         if (rooms[roomCode]) {
             socket.emit("error", { message: "Room already exists." });
             return;
@@ -48,82 +51,124 @@ export default (locationIO: Namespace, socket: Socket) => {
         rooms[roomCode].participants[userId] = {
             socketId: socket.id,
             userId: userId,
-            userName: authenticatedUser.user_name,
+            userName: authenticatedUser.user_name || authenticatedUser.name || userId,
             latitude: 0,
             longitude: 0,
         };
 
         socket.join(roomCode);
-        console.log(`User ${userId} created and joined room ${roomCode} as admin`);
+        logger.info(`User ${userId} created and joined room ${roomCode} as admin`);
 
-        // Emit back the room details to the creator
-        socket.emit("run-created", {
+        const payload = {
             roomCode,
             roomName,
             adminId: userId,
-            participants: Object.values(rooms[roomCode].participants)
-        });
-    });
+            participants: Object.values(rooms[roomCode].participants),
+        };
 
-    socket.on("join-run", ({ roomCode }: { roomCode: string; userId: string }) => {
-        // Use authenticated user ID if available, otherwise fallback to payload (or enforce auth)
+        // Emit with both naming conventions so legacy & new clients both receive it
+        socket.emit("run-created", payload);
+        socket.emit("roomCreated", payload);
+    };
+
+    socket.on("create-run", handleCreateRoom);   // legacy kebab-case
+    socket.on("createRoom", handleCreateRoom);   // React Native camelCase
+
+    // ─────────────────────────────────────────────────────────
+    // JOIN ROOM
+    // ─────────────────────────────────────────────────────────
+    const handleJoinRoom = ({ roomCode }: { roomCode: string; userId?: string }) => {
         const authenticatedUser = (socket as any).user;
-        const userId = authenticatedUser.user_id;
 
         if (!authenticatedUser) {
             socket.emit("error", { message: "Authentication required to join a run." });
             return;
         }
 
+        const userId = authenticatedUser.user_id || authenticatedUser.uid;
+
         if (!rooms[roomCode]) {
             socket.emit("error", { message: "Room does not exist." });
             return;
         }
 
-        console.log(`User ${userId} joined room ${roomCode}`);
+        logger.info(`User ${userId} joined room ${roomCode}`);
         socket.join(roomCode);
 
         rooms[roomCode].participants[userId] = {
             socketId: socket.id,
-            userName: authenticatedUser.user_name,
+            userName: authenticatedUser.user_name || authenticatedUser.name || userId,
             userId: userId,
             latitude: 0,
             longitude: 0,
         };
 
-        locationIO.to(roomCode).emit("room-users", {
+        const payload = {
             roomCode,
             roomName: rooms[roomCode].roomName,
             adminId: rooms[roomCode].adminId,
-            participants: Object.values(rooms[roomCode].participants)
-        });
-    });
+            participants: Object.values(rooms[roomCode].participants),
+        };
 
+        // Emit with both naming conventions
+        locationIO.to(roomCode).emit("room-users", payload);
+        locationIO.to(roomCode).emit("roomUsers", payload);
+    };
+
+    socket.on("join-run", handleJoinRoom);   // legacy
+    socket.on("joinRoom", handleJoinRoom);   // React Native
+
+    // ─────────────────────────────────────────────────────────
+    // START RUN
+    // ─────────────────────────────────────────────────────────
     socket.on("start-run", async ({ roomCode }: { roomCode: string }) => {
         if (rooms[roomCode]) {
-            locationIO.to(roomCode).emit("run-started", {
+            const payload = {
                 roomCode,
                 roomName: rooms[roomCode].roomName,
                 adminId: rooms[roomCode].adminId,
                 participants: Object.values(rooms[roomCode].participants),
                 pathId: rooms[roomCode].pathId,
-            });
+            };
+            locationIO.to(roomCode).emit("run-started", payload);
+            locationIO.to(roomCode).emit("runStarted", payload);
         }
     });
 
-    socket.on("my-location", ({ roomCode, userId, latitude, longitude }: { roomCode: string; userId: string; latitude: number; longitude: number }) => {
+    // ─────────────────────────────────────────────────────────
+    // UPDATE LOCATION
+    // ─────────────────────────────────────────────────────────
+    const handleUpdateLocation = ({
+        roomCode,
+        userId,
+        latitude,
+        longitude,
+    }: {
+        roomCode: string;
+        userId: string;
+        latitude: number;
+        longitude: number;
+    }) => {
         if (rooms[roomCode] && rooms[roomCode].participants[userId]) {
-            console.log(`User ${userId} updated location in room ${roomCode}`);
+            logger.debug(`User ${userId} updated location in room ${roomCode}`);
             rooms[roomCode].participants[userId].latitude = latitude;
             rooms[roomCode].participants[userId].longitude = longitude;
 
-            locationIO.to(roomCode).emit("location-updated", Object.values(rooms[roomCode].participants));
+            const participants = Object.values(rooms[roomCode].participants);
+
+            // Emit with both naming conventions
+            locationIO.to(roomCode).emit("location-updated", participants);
+            locationIO.to(roomCode).emit("participantLocationUpdate", participants);
         }
-    });
+    };
 
+    socket.on("my-location", handleUpdateLocation);    // legacy
+    socket.on("updateLocation", handleUpdateLocation); // React Native
+
+    // ─────────────────────────────────────────────────────────
+    // DISCONNECT — cleanup
+    // ─────────────────────────────────────────────────────────
     socket.on('disconnect', () => {
-        // console.log('🔴 Location Handler: User disconnected:', socket.id);
-
         for (const roomCode in rooms) {
             const room = rooms[roomCode];
             const usersInRoom = room.participants;
@@ -131,24 +176,22 @@ export default (locationIO: Namespace, socket: Socket) => {
                 if (usersInRoom[userId].socketId === socket.id) {
                     const leftUser = { ...usersInRoom[userId] };
                     delete usersInRoom[userId];
-                    console.log(`Removed user ${userId} from room ${roomCode}`);
+                    logger.info(`Removed user ${userId} from room ${roomCode}`);
 
-                    // Notify remaining participants about the user who left
+                    // Notify remaining participants
                     locationIO.to(roomCode).emit("user-left", leftUser);
-
-                    // Update room members
                     locationIO.to(roomCode).emit("room-users", Object.values(usersInRoom));
+                    locationIO.to(roomCode).emit("roomUsers", Object.values(usersInRoom));
 
-                    // If no users left, optionally delete the room
+                    // Clean up empty room
                     if (Object.keys(usersInRoom).length === 0) {
                         delete rooms[roomCode];
-                        console.log(`Deleted empty room ${roomCode}`);
+                        logger.info(`Deleted empty room ${roomCode}`);
                     } else if (room.adminId === userId) {
-                        // Admin left, assign new admin?
+                        // Assign new admin to the first remaining user
                         const remainingUserIds = Object.keys(usersInRoom);
                         if (remainingUserIds.length > 0) {
                             room.adminId = remainingUserIds[0];
-                            // Optionally notify about admin change
                         }
                     }
                     break;

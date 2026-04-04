@@ -1,170 +1,259 @@
 import express, { Request, Response } from 'express';
-import User from '../models/User';
+import { User } from '../models/User';
+import { verifyToken, AuthRequest } from '../middlewares/verifyToken';
 import DailyStep from '../models/dailyStep.model';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
-// GET /leaderboard - Fetch top users by points/distance
-router.get('/leaderboard', async (req: Request, res: Response) => {
-    try {
-        const users = await User.find({})
-            .select('user_name points distance user_image')
-            .sort({ points: -1, distance: -1 })
-            .limit(20);
-
-        res.json({ users });
-    } catch (err) {
-        console.error('Leaderboard error:', err);
-        res.status(500).json({ message: 'Error fetching leaderboard' });
-    }
-});
-
+// ─────────────────────────────────────────────────────────
+// GET /api/users/search?query=<string>
+// Find users by display name or email (case-insensitive)
+// ─────────────────────────────────────────────────────────
 router.get('/search', async (req: Request, res: Response) => {
-    const query = req.query.query as string;
-
-    console.log("query", query);
-
-
-    if (!query) {
-        return res.status(400).json({ message: 'Search query is required' });
-    }
-
     try {
+        const { query } = req.query as { query?: string };
+
+        if (!query || !query.trim()) {
+            return res.status(400).json({ message: 'Query parameter is required' });
+        }
+
+        const regex = new RegExp(query.trim(), 'i');
+
         const users = await User.find({
             $or: [
-                { user_name: { $regex: query, $options: 'i' } },
-                { user_email: { $regex: query, $options: 'i' } }
-            ]
-        }).select('-user_password');
-        console.log("users", users);
+                { displayName: { $regex: regex } },
+                { email: { $regex: regex } },
+            ],
+            isActive: true,
+        })
+            .limit(30);
 
-        res.json({ users });
+        const mapped = users.map((u) => ({
+            _id: u._id,
+            createdAt: u.createdAt,
+            displayName: u.displayName,
+            email: u.email,
+            isActive: u.isActive,
+            lastLoginAt: u.lastLoginAt,
+            photoURL: u.photoURL,
+            provider: u.provider,
+            role: u.role,
+            uid: u.uid,
+            xp: u.xp,
+        }));
+
+        console.log('Users found:', mapped);
+
+        return res.status(200).json({ users: mapped });
     } catch (err) {
-        console.error('User search error:', err);
-        res.status(500).json({ message: 'Internal server error' });
+        logger.error('User search error:', { error: err });
+        return res.status(500).json({ message: 'Error searching users' });
     }
 });
 
-const toDateKey = (date: Date): string => {
-    return date.toISOString().slice(0, 10);
-};
-
-const dayLabel = (date: Date): string => {
-    const labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-    return labels[date.getDay()];
-};
-
-router.post('/steps', async (req: Request, res: Response) => {
+// ─────────────────────────────────────────────────────────
+// GET /api/users/weekly-steps?userId=<uid>
+// Returns last 7 days of step data for progress charts
+// ─────────────────────────────────────────────────────────
+router.get('/weekly-steps', async (req: Request, res: Response) => {
     try {
-        const { userId, steps, dateKey } = req.body || {};
+        const { userId } = req.query as { userId?: string };
 
-        if (!userId || typeof userId !== 'string') {
-            return res.status(400).json({ message: 'userId is required' });
-        }
-
-        const safeSteps = Number(steps);
-        if (!Number.isFinite(safeSteps) || safeSteps < 0) {
-            return res.status(400).json({ message: 'steps must be a non-negative number' });
-        }
-
-        const finalDateKey = typeof dateKey === 'string' && dateKey.trim().length > 0
-            ? dateKey
-            : toDateKey(new Date());
-
-        const record = await DailyStep.findOneAndUpdate(
-            { user_id: userId, dateKey: finalDateKey },
-            { $set: { steps: Math.floor(safeSteps) } },
-            { upsert: true, new: true }
-        );
-
-        return res.json({
-            ok: true,
-            record: {
-                userId: record.user_id,
-                dateKey: record.dateKey,
-                steps: record.steps,
-            },
-        });
-    } catch (err) {
-        console.error('POST /users/steps error:', err);
-        return res.status(500).json({ message: 'Failed to save steps' });
-    }
-});
-
-// GET /users/steps/today?userId=<id> - Fetch today's step count for a user
-router.get('/steps/today', async (req: Request, res: Response) => {
-    try {
-        const userId = req.query.userId as string;
-
-        if (!userId || typeof userId !== 'string') {
+        if (!userId) {
             return res.status(400).json({ message: 'userId query parameter is required' });
         }
 
-        const todayKey = toDateKey(new Date());
+        // Build the last 7 date keys (YYYY-MM-DD) starting from today
+        const days: { dateKey: string; label: string; steps: number }[] = [];
+        const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-        const record = await DailyStep.findOne({
-            user_id: userId,
-            dateKey: todayKey,
-        }).lean();
-
-        return res.json({ steps: record ? Math.max(0, Number(record.steps) || 0) : 0 });
-    } catch (err) {
-        console.error('GET /users/steps/today error:', err);
-        return res.status(500).json({ message: 'Failed to fetch today\'s steps' });
-    }
-});
-
-router.get('/weekly-steps', async (req: Request, res: Response) => {
-    try {
-        const userId = (req.query.userId as string) || (req.headers['x-user-id'] as string);
-
-        if (!userId) {
-            return res.status(400).json({ message: 'userId is required' });
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const dateKey = d.toISOString().slice(0, 10); // YYYY-MM-DD
+            const label = dayLabels[d.getDay()];
+            days.push({ dateKey, label, steps: 0 });
         }
 
-        const today = new Date();
-        const dates: Date[] = [];
-        for (let i = 6; i >= 0; i -= 1) {
-            const d = new Date(today);
-            d.setDate(today.getDate() - i);
-            dates.push(d);
-        }
+        const dateKeys = days.map((d) => d.dateKey);
 
-        const dateKeys = dates.map(toDateKey);
-
+        // Fetch records from DB for this user in the last 7 days
         const records = await DailyStep.find({
             user_id: userId,
             dateKey: { $in: dateKeys },
-        }).lean();
+        }).select('dateKey steps');
 
-        const byKey = new Map(records.map((r: any) => [r.dateKey, Math.max(0, Number(r.steps) || 0)]));
+        // Merge DB data into the days array
+        const stepMap: Record<string, number> = {};
+        for (const r of records) {
+            stepMap[r.dateKey] = r.steps;
+        }
+        for (const day of days) {
+            if (stepMap[day.dateKey] !== undefined) {
+                day.steps = stepMap[day.dateKey];
+            }
+        }
 
-        const days = dates.map((d) => {
-            const key = toDateKey(d);
-            return {
-                dateKey: key,
-                label: dayLabel(d),
-                steps: byKey.get(key) ?? 0,
-            };
-        });
+        return res.status(200).json({ days });
+    } catch (err) {
+        logger.error('Weekly steps error:', { error: err });
+        return res.status(500).json({ message: 'Error fetching weekly steps' });
+    }
+});
 
-        const totalSteps = days.reduce((sum, d) => sum + d.steps, 0);
+// ─────────────────────────────────────────────────────────
+// GET /api/users/leaderboard/global  (alias → same as /leaderboard)
+// GET /api/users/leaderboard          (original)
+// Fetch top users platform-wide sorted by xp
+//
+// NOTE: these specific sub-paths must be declared BEFORE
+//       /leaderboard/friends/:userId to avoid route shadowing.
+// ─────────────────────────────────────────────────────────
+const globalLeaderboardHandler = async (_req: Request, res: Response) => {
+    try {
+        const users = await User.find({ isActive: true })
+            .sort({ xp: -1 })
+            .limit(20);
 
-        return res.json({
-            userId,
-            range: {
-                from: days[0]?.dateKey,
-                to: days[6]?.dateKey,
+        const mapped = users.map((u) => ({
+            _id: u._id,
+            createdAt: u.createdAt,
+            displayName: u.displayName,
+            email: u.email,
+            isActive: u.isActive,
+            lastLoginAt: u.lastLoginAt,
+            photoURL: u.photoURL,
+            provider: u.provider,
+            role: u.role,
+            uid: u.uid,
+            xp: u.xp,
+        }));
+
+        return res.status(200).json({ users: mapped });
+    } catch (err) {
+        logger.error('Leaderboard error:', { error: err });
+        return res.status(500).json({ message: 'Error fetching leaderboard' });
+    }
+};
+
+router.get('/leaderboard/global', globalLeaderboardHandler);
+router.get('/leaderboard', globalLeaderboardHandler);
+
+// ─────────────────────────────────────────────────────────
+// GET /api/users/leaderboard/friends/:userId
+// Fetch leaderboard restricted to a user's friend list
+// (friends are stored as UIDs in the `chats` array)
+// ─────────────────────────────────────────────────────────
+router.get('/leaderboard/friends/:userId', async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.params;
+
+        if (!userId) {
+            return res.status(400).json({ message: 'userId param is required' });
+        }
+
+        // Fetch the requesting user to get their friends list
+        const user = await User.findOne({ uid: userId }).select('chats');
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const friendUids: string[] = user.chats || [];
+
+        // Include the user themselves in the leaderboard
+        const uidsToQuery = [...new Set([userId, ...friendUids])];
+
+        const users = await User.find({ uid: { $in: uidsToQuery }, isActive: true })
+            .sort({ xp: -1 })
+            .limit(20);
+
+        const mapped = users.map((u) => ({
+            _id: u._id,
+            createdAt: u.createdAt,
+            displayName: u.displayName,
+            email: u.email,
+            isActive: u.isActive,
+            lastLoginAt: u.lastLoginAt,
+            photoURL: u.photoURL,
+            provider: u.provider,
+            role: u.role,
+            uid: u.uid,
+            xp: u.xp,
+        }));
+
+        return res.status(200).json({ users: mapped });
+    } catch (err) {
+        logger.error('Friends leaderboard error:', { error: err });
+        return res.status(500).json({ message: 'Error fetching friends leaderboard' });
+    }
+});
+
+// ─────────────────────────────────────────────────────────
+// PUT /api/users/profile/update
+// Update the authenticated user's physical metrics & prefs
+// ─────────────────────────────────────────────────────────
+router.put('/profile/update', verifyToken, async (req: AuthRequest, res: Response) => {
+    logger.info('Updating user profile...');
+    try {
+        const { uid } = req.user!;
+        const { display_name, height_cm, weight_kg, bmi, diet } = req.body;
+
+        // Validate display_name
+        if (!display_name || !display_name.trim()) {
+            return res.status(400).json({ message: 'Display name is required' });
+        }
+
+        // Validate height_cm
+        if (height_cm !== undefined && (typeof height_cm !== 'number' || height_cm < 50 || height_cm > 300)) {
+            return res.status(400).json({ message: 'Invalid height value' });
+        }
+
+        // Validate weight_kg
+        if (weight_kg !== undefined && (typeof weight_kg !== 'number' || weight_kg < 10 || weight_kg > 500)) {
+            return res.status(400).json({ message: 'Invalid weight value' });
+        }
+
+        // Validate diet
+        if (diet !== undefined && !['veg', 'nonveg'].includes(diet)) {
+            return res.status(400).json({ message: 'Invalid diet value' });
+        }
+
+        const updateFields: Record<string, any> = {
+            displayName: display_name.trim(),
+            ...(height_cm !== undefined && { height_cm }),
+            ...(weight_kg !== undefined && { weight_kg }),
+            ...(bmi !== undefined && { bmi }),
+            ...(diet !== undefined && { diet }),
+        };
+
+        const user = await User.findOneAndUpdate(
+            { uid },
+            { $set: updateFields },
+            { returnDocument: 'after', runValidators: true }
+        );
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        return res.status(200).json({
+            message: 'Profile updated successfully',
+            user: {
+                user_id: user.uid,
+                user_name: user.displayName,
+                user_email: user.email,
+                height_cm: user.height_cm,
+                weight_kg: user.weight_kg,
+                bmi: user.bmi,
+                diet: user.diet,
+                xp: user.xp,
+                updated_at: user.updatedAt,
             },
-            days,
-            totalSteps,
         });
     } catch (err) {
-        console.error('GET /users/weekly-steps error:', err);
-        return res.status(500).json({
-            message: 'Failed to fetch weekly steps',
-            days: [],
-        });
+        logger.error('Profile update error:', { error: err });
+        return res.status(500).json({ message: 'Internal server error' });
     }
 });
 

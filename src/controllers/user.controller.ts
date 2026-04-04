@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import User from '../models/User';
+import { User } from '../models/User';
+import logger from '../utils/logger';
 
 export const getLeaderboard = async (req: Request, res: Response) => {
   try {
@@ -12,7 +13,7 @@ export const getLeaderboard = async (req: Request, res: Response) => {
 
     res.status(200).json(users);
   } catch (error) {
-    console.error('Leaderboard error:', error);
+    logger.error('Leaderboard error:', { error });
     res.status(500).json({ message: 'Error fetching leaderboard' });
   }
 };

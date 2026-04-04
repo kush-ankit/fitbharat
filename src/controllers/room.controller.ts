@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Room } from '../models/room.model';
 import crypto from 'crypto';
+import logger from '../utils/logger';
 
 // Helper function to generate a 6-digit room code
 const generateRoomCode = (): string => {
@@ -10,7 +11,7 @@ const generateRoomCode = (): string => {
 
 // Controller to create a new room
 const createRoom = async (req: Request, res: Response) => {
-    console.log("Creating room with body:", req.body);
+    logger.debug("Creating room", { body: req.body });
 
     try {
         const { name, description, coordinates } = req.body;
@@ -40,14 +41,14 @@ const createRoom = async (req: Request, res: Response) => {
             room: newRoom,
         });
     } catch (error) {
-        console.error("Error creating room:", error);
+        logger.error("Error creating room:", { error });
         res.status(500).json({ error: "Server error while creating room" });
     }
 };
 
 const getRoom = async (req: Request, res: Response) => {
     const { roomCode } = req.query;
-    console.log("Fetching room with code:", roomCode);
+    logger.debug("Fetching room", { roomCode });
 
     if (!roomCode) {
         return res.status(400).json({ error: "Room code is required" });
@@ -66,7 +67,7 @@ const getRoom = async (req: Request, res: Response) => {
             room,
         });
     } catch (error) {
-        console.error("Error fetching room:", error);
+        logger.error("Error fetching room:", { error });
         res.status(500).json({ error: "Server error while fetching room" });
     }
 };

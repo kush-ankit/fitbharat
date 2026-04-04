@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import socketHandler from './chatSocket';
 import locationHandler from './locationHandler';
+import logger from '../utils/logger';
 
 export default (io: Server) => {
 
@@ -8,23 +9,26 @@ export default (io: Server) => {
     const locationIO = io.of('/location');
 
     locationIO.on('connection', (socket: Socket) => {
-        console.log(`🔌 Client connected: ${socket.id}`);
+        logger.info(`🔌 Location Client connected: ${socket.id}`);
+        logger.debug("Location Socket Data:", { data: socket.data });
+
 
         // Attach Location/Room Logic
         locationHandler(locationIO, socket);
 
         socket.on('disconnect', () => {
-            console.log(`❌ Client disconnected: ${socket.id}`);
+            logger.info(`❌ Location Client disconnected: ${socket.id}`);
         });
     });
 
     messagesIO.on('connection', (socket: Socket) => {
-        console.log(`🔌 Client connected: ${socket.id}`);
+        logger.info(`🔌 Messages Client connected: ${socket.id}`);
+        logger.debug("Message Socket Data:", { data: socket.data });
 
         // Attach Chat Logic
         socketHandler(messagesIO, socket);
         socket.on('disconnect', () => {
-            console.log(`❌ Client disconnected: ${socket.id}`);
+            logger.info(`❌ Messages Client disconnected: ${socket.id}`);
         });
     });
 };

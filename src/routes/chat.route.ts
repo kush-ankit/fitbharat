@@ -1,75 +1,63 @@
 import express, { Request, Response } from 'express';
 import Chat from '../models/Chat';
-import User from '../models/User';
-import IUser from '../types/user.types';
-import jwt from 'jsonwebtoken';
+import { User } from '../models/User';
+import { verifyToken, AuthRequest } from '../middlewares/verifyToken';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
 // create a new chat for add friend
-router.post("/addfriend", async (req: Request, res: Response) => {
+router.post("/addfriend", verifyToken, async (req: AuthRequest, res: Response) => {
     try {
-        const { user, friend }: { user: IUser, friend: IUser } = req.body;
-        console.log("user", user);
-        console.log("friend", friend);
-        if (
-            !user || !friend ||
-            typeof user.user_id !== "string" ||
-            typeof friend.user_id !== "string" ||
-            user.user_id === friend.user_id
-        ) {
+        const { friend, user } = req.body;
+
+        // Extract authenticated user ID, and friend's ID from body
+        const userId = user?.uid;
+        const friendId = friend?.user_id || friend?.uid;
+
+        if (!friendId || userId === friendId) {
             return res.status(400).json({ message: "Invalid user data" });
         }
 
-
-
-        const userId = user.user_id;
-        const friendId = friend.user_id;
-
-        const chat = await Chat.findOne({ chat_id: { $in: [userId, friendId] } });
-        if (chat) {
-            return res.status(400).json({ message: "Chat already exists", chat });
+        // Check if already friends
+        const currentUser = await User.findOne({ uid: userId });
+        if (currentUser?.chats?.includes(friendId)) {
+            return res.status(400).json({ message: "User is already in your friends list" });
         }
 
+        // Add each other to their `chats` array (which acts as the friend list)
         await Promise.all([
-            User.updateOne({ user_id: userId }, { $addToSet: { user_chats: friendId } }),
-            User.updateOne({ user_id: friendId }, { $addToSet: { user_chats: userId } }),
+            User.updateOne({ uid: userId }, { $addToSet: { chats: friendId } }),
+            User.updateOne({ uid: friendId }, { $addToSet: { chats: userId } }),
         ]);
 
-        return res.status(200).json({ message: "Chat created", chat });
+        return res.status(200).json({ message: "Friend added successfully" });
 
     } catch (error) {
-        console.error("Error creating chat:", error);
+        logger.error("Error adding friend:", { error });
         return res.status(500).json({ message: "Server error" });
     }
 });
 
-router.get('/getAllChatsOfUser', async (req: Request, res: Response) => {
+router.get('/getAllChatsOfUser', verifyToken, async (req: AuthRequest, res: Response) => {
     try {
-        const token = req.headers.authorization?.split(' ')[1];
-        if (!token || !process.env.JWT_SECRET) {
-            return res.status(401).json({ message: 'Missing or invalid token' });
-        }
+        const userId = req.user!.uid;
 
-        const decoded: any = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findOne({ uid: userId });
 
-        console.log('Decoded token:', decoded);
-
-        const user = await User.findOne({ userid: decoded.userId });
-
-        console.log('user:', user);
+        logger.debug('User fetched in getAllChatsOfUser', { userId: user?.uid });
 
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
         const chats = await Chat.find({ chat_id: { $in: user.chats } });
-        console.log('chats:', chats);
+        logger.debug('Chats loaded', { count: chats.length });
 
         return res.status(200).json({ chats });
 
     } catch (error) {
-        console.error('Error in /getAllChatsOfUser:', error);
+        logger.error('Error in /getAllChatsOfUser:', { error });
         return res.status(500).json({ message: 'Server error' });
     }
 });

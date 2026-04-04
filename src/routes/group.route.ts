@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import Group from '../models/Group';
+import logger from '../utils/logger';
 
 const router = express.Router();
 
@@ -62,11 +63,11 @@ router.post('/create', async (req: Request, res: Response) => {
         });
 
         const savedGroup = await newGroup.save();
-        console.log('savedGroup:', savedGroup);
+        logger.info('savedGroup created', { groupId: savedGroup.id });
 
         res.status(201).json(savedGroup);
     } catch (err) {
-        console.error('Error creating group:', err);
+        logger.error('Error creating group:', { error: err });
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -103,7 +104,7 @@ router.get('/getallbypathid', async (req: Request, res: Response) => {
         const groups = await Group.find({ pathid });
         res.status(200).json(groups);
     } catch (err) {
-        console.error('Error fetching groups:', err);
+        logger.error('Error fetching groups:', { error: err });
         res.status(500).json({ message: 'Server error' });
     }
 });

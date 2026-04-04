@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Path } from '../models/path.model';
+import logger from '../utils/logger';
 
 const savePath = async (req: Request, res: Response) => {
     try {
@@ -25,14 +26,14 @@ const savePath = async (req: Request, res: Response) => {
         await newPath.save();
         res.status(201).json({ message: "Path saved successfully", newPath });
     } catch (error) {
-        console.error("Error saving path:", error);
+        logger.error("Error saving path:", { error });
         res.status(500).json({ error: "Internal server error" });
     }
 };
 
 
 const getNearbyPaths = async (req: Request, res: Response) => {
-    console.log("Fetching nearby paths...");
+    logger.debug("Fetching nearby paths...");
 
     try {
         const { latitude, longitude } = req.query;
@@ -79,7 +80,7 @@ const getNearbyPaths = async (req: Request, res: Response) => {
 
         res.status(200).json({ message: "Nearby Paths Found", paths: formattedPaths });
     } catch (error) {
-        console.error("Error fetching nearby paths:", error);
+        logger.error("Error fetching nearby paths:", { error });
         res.status(500).json({ error: "Internal server error" });
     }
 };
@@ -127,7 +128,7 @@ const getPathById = async (req: Request, res: Response) => {
             },
         });
     } catch (error) {
-        console.error("Error fetching path by ID:", error);
+        logger.error("Error fetching path by ID:", { error });
         res.status(500).json({ error: "Internal server error" });
     }
 };
