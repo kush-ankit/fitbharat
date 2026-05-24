@@ -52,9 +52,77 @@ router.get('/search', async (req: Request, res: Response) => {
     }
 });
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// ─────────────────────────────────────────────────────────
+// POST /api/users/steps/sync
+// Upsert per-day step counts. Last write wins per (userId, isoDate).
+// Accepts either a single entry or a batch:
+//   { userId, isoDate, steps }
+//   { userId, days: [{ isoDate, steps }, ...] }
+// ─────────────────────────────────────────────────────────
+router.post('/steps/sync', async (req: Request, res: Response) => {
+    try {
+        const { userId, isoDate, steps, days } = req.body as {
+            userId?: string;
+            isoDate?: string;
+            steps?: number;
+            days?: { isoDate?: string; steps?: number }[];
+        };
+
+        if (!userId || typeof userId !== 'string') {
+            return res.status(400).json({ message: 'userId is required' });
+        }
+
+        const entries: { isoDate: string; steps: number }[] = [];
+        if (Array.isArray(days)) {
+            for (const d of days) {
+                if (!d || typeof d.isoDate !== 'string' || !ISO_DATE_RE.test(d.isoDate)) {
+                    return res.status(400).json({ message: 'Each day requires isoDate (YYYY-MM-DD)' });
+                }
+                if (typeof d.steps !== 'number' || !Number.isFinite(d.steps) || d.steps < 0) {
+                    return res.status(400).json({ message: 'Each day requires non-negative numeric steps' });
+                }
+                entries.push({ isoDate: d.isoDate, steps: Math.floor(d.steps) });
+            }
+        } else {
+            if (typeof isoDate !== 'string' || !ISO_DATE_RE.test(isoDate)) {
+                return res.status(400).json({ message: 'isoDate (YYYY-MM-DD) is required' });
+            }
+            if (typeof steps !== 'number' || !Number.isFinite(steps) || steps < 0) {
+                return res.status(400).json({ message: 'steps must be a non-negative number' });
+            }
+            entries.push({ isoDate, steps: Math.floor(steps) });
+        }
+
+        if (entries.length === 0) {
+            return res.status(400).json({ message: 'No step entries provided' });
+        }
+
+        const ops = entries.map((e) => ({
+            updateOne: {
+                filter: { user_id: userId, dateKey: e.isoDate },
+                update: { $set: { steps: e.steps } },
+                upsert: true,
+            },
+        }));
+
+        await DailyStep.bulkWrite(ops, { ordered: false });
+
+        return res.status(200).json({
+            updated: entries.length,
+            days: entries.map((e) => ({ isoDate: e.isoDate, steps: e.steps })),
+        });
+    } catch (err) {
+        logger.error('Steps sync error:', { error: err });
+        return res.status(500).json({ message: 'Error syncing steps' });
+    }
+});
+
 // ─────────────────────────────────────────────────────────
 // GET /api/users/weekly-steps?userId=<uid>
-// Returns last 7 days of step data for progress charts
+// Returns last 7 days of step data, oldest → newest (today last).
+// Shape: { days: [{ isoDate, steps }, ...7 entries] }
 // ─────────────────────────────────────────────────────────
 router.get('/weekly-steps', async (req: Request, res: Response) => {
     try {
@@ -64,34 +132,27 @@ router.get('/weekly-steps', async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'userId query parameter is required' });
         }
 
-        // Build the last 7 date keys (YYYY-MM-DD) starting from today
-        const days: { dateKey: string; label: string; steps: number }[] = [];
-        const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
+        const days: { isoDate: string; steps: number }[] = [];
         for (let i = 6; i >= 0; i--) {
             const d = new Date();
             d.setDate(d.getDate() - i);
-            const dateKey = d.toISOString().slice(0, 10); // YYYY-MM-DD
-            const label = dayLabels[d.getDay()];
-            days.push({ dateKey, label, steps: 0 });
+            days.push({ isoDate: d.toISOString().slice(0, 10), steps: 0 });
         }
 
-        const dateKeys = days.map((d) => d.dateKey);
+        const dateKeys = days.map((d) => d.isoDate);
 
-        // Fetch records from DB for this user in the last 7 days
         const records = await DailyStep.find({
             user_id: userId,
             dateKey: { $in: dateKeys },
         }).select('dateKey steps');
 
-        // Merge DB data into the days array
         const stepMap: Record<string, number> = {};
         for (const r of records) {
             stepMap[r.dateKey] = r.steps;
         }
         for (const day of days) {
-            if (stepMap[day.dateKey] !== undefined) {
-                day.steps = stepMap[day.dateKey];
+            if (stepMap[day.isoDate] !== undefined) {
+                day.steps = stepMap[day.isoDate];
             }
         }
 
