@@ -1,5 +1,5 @@
 import express from 'express';
-import { createRoom, getRoom } from '../controllers/room.controller';
+import { createRoom, getRoom, getNearbyRooms } from '../controllers/room.controller';
 
 const router = express.Router();
 
@@ -59,14 +59,41 @@ router.post('/create-room', createRoom);
  *     responses:
  *       200:
  *         description: Room details
- *       400:
- *         description: Room code is required
  *       404:
  *         description: Room not found
  *       500:
  *         description: Server error
  */
 router.get('/get-room', getRoom);
+
+/**
+ * @swagger
+ * /rooms/nearby:
+ *   get:
+ *     summary: Retrieve active or starting running lobbies within a 5 km radius of user GPS location
+ *     tags: [Room]
+ *     parameters:
+ *       - in: query
+ *         name: latitude
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: User's latitude
+ *       - in: query
+ *         name: longitude
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: User's longitude
+ *     responses:
+ *       200:
+ *         description: List of nearby rooms retrieved successfully
+ *       400:
+ *         description: Latitude and longitude are required or invalid
+ *       500:
+ *         description: Server error
+ */
+router.get('/nearby', getNearbyRooms);
 
 export default router;
 

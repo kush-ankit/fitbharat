@@ -1,5 +1,6 @@
 import { Namespace, Server, Socket } from 'socket.io';
 import { Path } from '../models/path.model';
+import { Room } from '../models/room.model';
 import logger from '../utils/logger';
 
 interface UserLocation {
@@ -22,11 +23,73 @@ const rooms: { [roomCode: string]: RoomData } = {}; // In-memory storage for roo
 export default (locationIO: Namespace, socket: Socket) => {
     logger.debug(`🟢 Location Handler: User connected: ${socket.id}`);
 
+    // Helper to handle user leaving a room (used by both disconnect and leave-run)
+    const handleUserLeave = async (roomCode: string, socketId: string) => {
+        if (!rooms[roomCode]) return;
+        const room = rooms[roomCode];
+        const usersInRoom = room.participants;
+        let leftUser: any = null;
+        let leftUserId: string = '';
+
+        for (const userId in usersInRoom) {
+            if (usersInRoom[userId].socketId === socketId) {
+                leftUser = { ...usersInRoom[userId] };
+                leftUserId = userId;
+                delete usersInRoom[userId];
+                logger.info(`Removed user ${userId} from room ${roomCode}`);
+                break;
+            }
+        }
+
+        if (!leftUser) return;
+
+        // Notify remaining participants
+        locationIO.to(roomCode).emit("user-left", leftUser);
+        locationIO.to(roomCode).emit("room-users", Object.values(usersInRoom));
+        locationIO.to(roomCode).emit("roomUsers", Object.values(usersInRoom));
+
+        // Clean up empty room or update admin
+        if (Object.keys(usersInRoom).length === 0) {
+            delete rooms[roomCode];
+            logger.info(`Deleted empty room ${roomCode}`);
+            // Update MongoDB: set status to 'FINISHED'
+            try {
+                await Room.findOneAndUpdate(
+                    { roomCode, status: { $in: ['STARTING', 'ACTIVE'] } },
+                    { status: 'FINISHED', participants: [] }
+                );
+                logger.info(`Persisted room ${roomCode} status change to FINISHED`);
+            } catch (err) {
+                logger.error(`Database error setting room ${roomCode} to FINISHED:`, err);
+            }
+        } else {
+            if (room.adminId === leftUserId) {
+                // Assign new admin to the first remaining user
+                const remainingUserIds = Object.keys(usersInRoom);
+                if (remainingUserIds.length > 0) {
+                    room.adminId = remainingUserIds[0];
+                }
+            }
+            // Update MongoDB: update participants list and adminId
+            try {
+                await Room.findOneAndUpdate(
+                    { roomCode, status: { $in: ['STARTING', 'ACTIVE'] } },
+                    {
+                        adminId: room.adminId,
+                        participants: Object.values(usersInRoom)
+                    }
+                );
+                logger.info(`Persisted user leave cleanup for room ${roomCode} in database`);
+            } catch (err) {
+                logger.error(`Database error updating room ${roomCode} on user leave:`, err);
+            }
+        }
+    };
+
     // ─────────────────────────────────────────────────────────
-    // CREATE ROOM — supports both kebab-case (legacy) and
-    // camelCase (React Native mobile app) event names
+    // CREATE ROOM
     // ─────────────────────────────────────────────────────────
-    const handleCreateRoom = ({ roomCode, roomName, pathId }: { roomCode: string; roomName: string; pathId?: string }) => {
+    const handleCreateRoom = async ({ roomCode, roomName, pathId }: { roomCode: string; roomName: string; pathId?: string }) => {
         const authenticatedUser = (socket as any).user;
 
         if (!authenticatedUser) {
@@ -48,13 +111,35 @@ export default (locationIO: Namespace, socket: Socket) => {
             pathId: pathId,
         };
 
-        rooms[roomCode].participants[userId] = {
+        const participant = {
             socketId: socket.id,
             userId: userId,
             userName: authenticatedUser.user_name || authenticatedUser.name || userId,
             latitude: 0,
             longitude: 0,
         };
+
+        rooms[roomCode].participants[userId] = participant;
+
+        // Persist to MongoDB: Delete old rooms with same code first, then save new Room
+        try {
+            await Room.deleteOne({ roomCode });
+            const newDbRoom = new Room({
+                roomCode,
+                roomName,
+                adminId: userId,
+                pathId: pathId || undefined,
+                status: 'STARTING',
+                participants: [participant],
+                name: roomName,
+                description: roomName,
+                isActive: true,
+            });
+            await newDbRoom.save();
+            logger.info(`Persisted room ${roomCode} to database`);
+        } catch (err) {
+            logger.error(`Database error creating room ${roomCode}:`, err);
+        }
 
         socket.join(roomCode);
         logger.info(`User ${userId} created and joined room ${roomCode} as admin`);
@@ -77,7 +162,7 @@ export default (locationIO: Namespace, socket: Socket) => {
     // ─────────────────────────────────────────────────────────
     // JOIN ROOM
     // ─────────────────────────────────────────────────────────
-    const handleJoinRoom = ({ roomCode }: { roomCode: string; userId?: string }) => {
+    const handleJoinRoom = async ({ roomCode }: { roomCode: string; userId?: string }) => {
         const authenticatedUser = (socket as any).user;
 
         if (!authenticatedUser) {
@@ -95,13 +180,30 @@ export default (locationIO: Namespace, socket: Socket) => {
         logger.info(`User ${userId} joined room ${roomCode}`);
         socket.join(roomCode);
 
-        rooms[roomCode].participants[userId] = {
+        const participant = {
             socketId: socket.id,
             userName: authenticatedUser.user_name || authenticatedUser.name || userId,
             userId: userId,
             latitude: 0,
             longitude: 0,
         };
+
+        rooms[roomCode].participants[userId] = participant;
+
+        // Persist to MongoDB
+        try {
+            await Room.findOneAndUpdate(
+                { roomCode, status: { $in: ['STARTING', 'ACTIVE'] } },
+                {
+                    $set: {
+                        participants: Object.values(rooms[roomCode].participants)
+                    }
+                }
+            );
+            logger.info(`Persisted user ${userId} join to room ${roomCode} in database`);
+        } catch (err) {
+            logger.error(`Database error joining user ${userId} to room ${roomCode}:`, err);
+        }
 
         const payload = {
             roomCode,
@@ -123,6 +225,16 @@ export default (locationIO: Namespace, socket: Socket) => {
     // ─────────────────────────────────────────────────────────
     socket.on("start-run", async ({ roomCode }: { roomCode: string }) => {
         if (rooms[roomCode]) {
+            try {
+                await Room.findOneAndUpdate(
+                    { roomCode, status: 'STARTING' },
+                    { status: 'ACTIVE' }
+                );
+                logger.info(`Persisted room ${roomCode} status change to ACTIVE`);
+            } catch (err) {
+                logger.error(`Database error setting room ${roomCode} to ACTIVE:`, err);
+            }
+
             const payload = {
                 roomCode,
                 roomName: rooms[roomCode].roomName,
@@ -140,7 +252,7 @@ export default (locationIO: Namespace, socket: Socket) => {
     // ─────────────────────────────────────────────────────────
     const handleUpdateLocation = ({
         roomCode,
-        userId,
+        userId: clientUserId,
         latitude,
         longitude,
     }: {
@@ -149,6 +261,9 @@ export default (locationIO: Namespace, socket: Socket) => {
         latitude: number;
         longitude: number;
     }) => {
+        const authenticatedUser = (socket as any).user;
+        const userId = (authenticatedUser?.user_id || authenticatedUser?.uid) ?? clientUserId;
+
         if (rooms[roomCode] && rooms[roomCode].participants[userId]) {
             logger.debug(`User ${userId} updated location in room ${roomCode}`);
             rooms[roomCode].participants[userId].latitude = latitude;
@@ -166,37 +281,24 @@ export default (locationIO: Namespace, socket: Socket) => {
     socket.on("updateLocation", handleUpdateLocation); // React Native
 
     // ─────────────────────────────────────────────────────────
+    // LEAVE RUN / LOBBY
+    // ─────────────────────────────────────────────────────────
+    const handleLeaveRunEvent = async ({ roomCode }: { roomCode: string }) => {
+        if (roomCode) {
+            await handleUserLeave(roomCode, socket.id);
+        }
+    };
+
+    socket.on("leave-run", handleLeaveRunEvent);
+    socket.on("leaveRoom", handleLeaveRunEvent);
+
+    // ─────────────────────────────────────────────────────────
     // DISCONNECT — cleanup
     // ─────────────────────────────────────────────────────────
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         for (const roomCode in rooms) {
-            const room = rooms[roomCode];
-            const usersInRoom = room.participants;
-            for (const userId in usersInRoom) {
-                if (usersInRoom[userId].socketId === socket.id) {
-                    const leftUser = { ...usersInRoom[userId] };
-                    delete usersInRoom[userId];
-                    logger.info(`Removed user ${userId} from room ${roomCode}`);
-
-                    // Notify remaining participants
-                    locationIO.to(roomCode).emit("user-left", leftUser);
-                    locationIO.to(roomCode).emit("room-users", Object.values(usersInRoom));
-                    locationIO.to(roomCode).emit("roomUsers", Object.values(usersInRoom));
-
-                    // Clean up empty room
-                    if (Object.keys(usersInRoom).length === 0) {
-                        delete rooms[roomCode];
-                        logger.info(`Deleted empty room ${roomCode}`);
-                    } else if (room.adminId === userId) {
-                        // Assign new admin to the first remaining user
-                        const remainingUserIds = Object.keys(usersInRoom);
-                        if (remainingUserIds.length > 0) {
-                            room.adminId = remainingUserIds[0];
-                        }
-                    }
-                    break;
-                }
-            }
+            await handleUserLeave(roomCode, socket.id);
         }
     });
 };
+

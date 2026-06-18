@@ -73,6 +73,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/room', roomRoutes);
+app.use('/api/rooms', roomRoutes);
 app.use('/api/paths', pathRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/ai-checkin', aiCheckinRoutes);
