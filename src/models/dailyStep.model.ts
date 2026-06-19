@@ -10,8 +10,8 @@ export interface IDailyStep extends Document {
 
 const DailyStepSchema = new Schema<IDailyStep>(
   {
-    user_id: { type: String, required: true, index: true },
-    dateKey: { type: String, required: true, index: true },
+    user_id: { type: String, required: true },
+    dateKey: { type: String, required: true },
     steps: { type: Number, required: true, min: 0, default: 0 },
   },
   { timestamps: true }

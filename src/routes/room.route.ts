@@ -1,7 +1,10 @@
 import express from 'express';
 import { createRoom, getRoom, getNearbyRooms } from '../controllers/room.controller';
+import { verifyToken } from '../middlewares/verifyToken';
 
 const router = express.Router();
+
+router.use(verifyToken);
 
 /**
  * @swagger

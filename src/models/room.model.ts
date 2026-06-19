@@ -93,6 +93,8 @@ const RoomSchema: Schema = new Schema(
     { timestamps: true }
 );
 
+RoomSchema.index({ pathId: 1, status: 1 });
+
 const Room = mongoose.models.Room || mongoose.model<IRoom>("Room", RoomSchema);
 
 export { Room };

@@ -10,6 +10,19 @@ const savePath = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "Missing required fields" });
         }
 
+        const isValidCoordinate = (val: any) => typeof val === 'number' && Number.isFinite(val);
+
+        if (
+            !isValidCoordinate(startLocation.longitude) || !isValidCoordinate(startLocation.latitude) ||
+            !isValidCoordinate(endLocation.longitude) || !isValidCoordinate(endLocation.latitude)
+        ) {
+            return res.status(400).json({ error: "Invalid coordinate values for start or end locations" });
+        }
+
+        if (!Array.isArray(route) || route.some((point: any) => !point || !isValidCoordinate(point.longitude) || !isValidCoordinate(point.latitude))) {
+            return res.status(400).json({ error: "Route must be an array of valid coordinate points" });
+        }
+
         const newPath = new Path({
             startLocation: { type: "Point", coordinates: [startLocation.longitude, startLocation.latitude] },
             endLocation: { type: "Point", coordinates: [endLocation.longitude, endLocation.latitude] },

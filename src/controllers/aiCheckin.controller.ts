@@ -1,28 +1,15 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import fs from 'fs';
-import jwt from 'jsonwebtoken';
 import path from 'path';
 import AiCheckin from '../models/aiCheckin.model';
 import { analyzeProgressImage } from '../ai/provider';
 import { buildRecommendations } from '../ai/recommendationEngine';
+import { AuthRequest } from '../middlewares/verifyToken';
 
 const uploadsDir = path.resolve(process.cwd(), 'uploads', 'ai-checkins');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
-
-const getUserIdFromRequest = (req: Request): string | undefined => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return undefined;
-
-  try {
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
-    return decoded?.user_id || decoded?.id;
-  } catch {
-    return undefined;
-  }
-};
 
 const runAnalysisInBackground = async (id: string) => {
   const checkin = await AiCheckin.findById(id);
@@ -49,7 +36,7 @@ const runAnalysisInBackground = async (id: string) => {
   }
 };
 
-export const uploadAiCheckin = async (req: Request, res: Response) => {
+export const uploadAiCheckin = async (req: AuthRequest, res: Response) => {
   const file = (req as any).file as Express.Multer.File | undefined;
   if (!file) {
     return res.status(400).json({ message: 'Image file is required (multipart/form-data, field name: image).' });
@@ -62,7 +49,7 @@ export const uploadAiCheckin = async (req: Request, res: Response) => {
     return res.status(400).json({ message: 'Consent and disclaimer acceptance are required.' });
   }
 
-  const userId = getUserIdFromRequest(req);
+  const userId = req.user!.uid;
 
   const created = await AiCheckin.create({
     userId,
@@ -73,8 +60,8 @@ export const uploadAiCheckin = async (req: Request, res: Response) => {
     fileSize: file.size,
     consentAccepted,
     disclaimerAccepted,
-    modelProvider: process.env.AI_CHECKIN_PROVIDER || 'openai',
-    modelName: process.env.AI_CHECKIN_MODEL || 'gpt-4.1-mini',
+    modelProvider: process.env.AI_CHECKIN_PROVIDER || 'gemini',
+    modelName: process.env.AI_CHECKIN_MODEL || 'gemini-3.1-pro-preview',
   });
 
   void runAnalysisInBackground(String(created._id));
@@ -86,7 +73,7 @@ export const uploadAiCheckin = async (req: Request, res: Response) => {
   });
 };
 
-export const getAiCheckinById = async (req: Request, res: Response) => {
+export const getAiCheckinById = async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
   const record = await AiCheckin.findById(id).lean();
 
@@ -95,6 +82,11 @@ export const getAiCheckinById = async (req: Request, res: Response) => {
       message: 'AI check-in not found',
       checkinId: id,
     });
+  }
+
+  // Authorization check: only owner or admin can view
+  if (record.userId !== req.user!.uid && req.user!.role !== 'admin') {
+    return res.status(403).json({ message: 'Forbidden: You cannot access this check-in.' });
   }
 
   return res.status(200).json({
@@ -109,18 +101,20 @@ export const getAiCheckinById = async (req: Request, res: Response) => {
   });
 };
 
-export const getLatestAiCheckin = async (req: Request, res: Response) => {
+export const getLatestAiCheckin = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req.query.userId as string) || (req.headers['x-user-id'] as string);
+    const authUserId = req.user!.uid;
+    const targetUserId = (req.query.userId as string) || authUserId;
 
-    if (!userId) {
-      return res.status(400).json({ message: 'userId is required' });
+    // Authorization check: only self or admin can access
+    if (targetUserId !== authUserId && req.user!.role !== 'admin') {
+      return res.status(403).json({ message: 'Forbidden: You cannot access other users\' data.' });
     }
 
-    const record = await AiCheckin.findOne({ userId }).sort({ createdAt: -1 }).lean();
+    const record = await AiCheckin.findOne({ userId: targetUserId }).sort({ createdAt: -1 }).lean();
 
     if (!record) {
-      return res.status(404).json({ message: 'No AI check-ins found', userId });
+      return res.status(404).json({ message: 'No AI check-ins found', userId: targetUserId });
     }
 
     return res.status(200).json({

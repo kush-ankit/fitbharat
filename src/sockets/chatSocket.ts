@@ -4,10 +4,8 @@ import { User } from '../models/User';
 import IMessage from '../types/message.types';
 import logger from '../utils/logger';
 
-const userSocketMap: { [key: string]: string } = {}; // userId -> socketId
+const userSocketMap: { [key: string]: Set<string> } = {}; // userId -> Set of socketIds
 const socketUserMap: { [key: string]: string } = {}; // socketId -> userId
-
-const SocketUserMap: { [key: string]: string } = {};
 
 export default (messagesIO: Namespace, socket: Socket) => {
     logger.debug(`User Connected: ${socket.id}`);
@@ -16,7 +14,10 @@ export default (messagesIO: Namespace, socket: Socket) => {
     const userId = user?.uid || user?.user_id;
 
     if (userId) {
-        userSocketMap[userId] = socket.id;
+        if (!userSocketMap[userId]) {
+            userSocketMap[userId] = new Set();
+        }
+        userSocketMap[userId].add(socket.id);
         socketUserMap[socket.id] = userId;
         logger.debug(`Mapped user ${userId} to socket ${socket.id}`);
     }
@@ -33,9 +34,13 @@ export default (messagesIO: Namespace, socket: Socket) => {
         logger.debug(`getChatHistory trigger to ${receiver_user_id}`);
         const sender_user_id = user?.uid || user?.user_id;
         try {
+            if (typeof receiver_user_id !== 'string') {
+                logger.warn("Invalid receiver_user_id type in getChatHistory");
+                return;
+            }
             // Resolve to Firebase UID if MongoDB _id is passed
             let resolvedReceiverId = receiver_user_id;
-            if (resolvedReceiverId && resolvedReceiverId.length === 24) {
+            if (resolvedReceiverId.length === 24) {
                 const receiverUser = await User.findById(resolvedReceiverId);
                 if (receiverUser) resolvedReceiverId = receiverUser.uid;
             }
@@ -95,8 +100,8 @@ export default (messagesIO: Namespace, socket: Socket) => {
             data.sender_user_id = userId;
         }
 
-        if (!data.sender_user_id || !data.receiver_user_id || !data.text_massage) {
-            logger.warn("Missing required fields on sendMessage logic", { data });
+        if (!data.sender_user_id || typeof data.receiver_user_id !== 'string' || !data.text_massage) {
+            logger.warn("Missing or invalid required fields on sendMessage logic", { data });
             return;
         }
 
@@ -104,7 +109,7 @@ export default (messagesIO: Namespace, socket: Socket) => {
         try {
             // Resolve to Firebase UID if MongoDB _id is passed for receiver
             let resolvedReceiverId = data.receiver_user_id;
-            if (resolvedReceiverId && resolvedReceiverId.length === 24) {
+            if (resolvedReceiverId.length === 24) {
                 const receiverUser = await User.findById(resolvedReceiverId);
                 if (receiverUser) resolvedReceiverId = receiverUser.uid;
             }
@@ -113,9 +118,11 @@ export default (messagesIO: Namespace, socket: Socket) => {
             const newMessage = new Message(data);
             await newMessage.save();
 
-            const receiverSocketId = userSocketMap[resolvedReceiverId];
-            if (receiverSocketId) {
-                messagesIO.to(receiverSocketId).emit("receiveMessage", newMessage);
+            const receiverSocketIds = userSocketMap[resolvedReceiverId];
+            if (receiverSocketIds) {
+                receiverSocketIds.forEach(socketId => {
+                    messagesIO.to(socketId).emit("receiveMessage", newMessage);
+                });
             }
 
         } catch (error) {
@@ -127,7 +134,13 @@ export default (messagesIO: Namespace, socket: Socket) => {
         // console.log("User Disconnected", socket.id);
         const userId = socketUserMap[socket.id];
         if (userId) {
-            delete userSocketMap[userId];
+            const userSockets = userSocketMap[userId];
+            if (userSockets) {
+                userSockets.delete(socket.id);
+                if (userSockets.size === 0) {
+                    delete userSocketMap[userId];
+                }
+            }
             delete socketUserMap[socket.id];
         }
     });

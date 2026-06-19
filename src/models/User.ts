@@ -7,7 +7,7 @@ const UserSchema = new Schema<IUser>(
     {
         uid: { type: String, required: true, unique: true, index: true },
         email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-        displayName: { type: String, trim: true },
+        displayName: { type: String, trim: true, index: true },
         photoURL: { type: String },
         emailVerified: { type: Boolean, default: false },
         password: { type: String },

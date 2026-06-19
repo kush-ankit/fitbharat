@@ -1,8 +1,11 @@
 import express, { Request, Response } from 'express';
 import Group from '../models/Group';
 import logger from '../utils/logger';
+import { verifyToken } from '../middlewares/verifyToken';
 
 const router = express.Router();
+
+router.use(verifyToken);
 
 
 

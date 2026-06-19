@@ -2,10 +2,15 @@ import mongoose, { Schema, Document } from 'mongoose';
 import IChat from '../types/chat.types';
 
 const ChatSchema: Schema = new Schema({
+    chat_id: {
+        type: String,
+        unique: true,
+        sparse: true,
+    },
     chatid: {
         type: String,
         unique: true,
-        required: true,
+        sparse: true,
     },
     chat_members_user_id: {
         type: [String],

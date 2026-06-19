@@ -51,7 +51,12 @@ router.get('/getAllChatsOfUser', verifyToken, async (req: AuthRequest, res: Resp
             return res.status(404).json({ message: 'User not found' });
         }
 
-        const chats = await Chat.find({ chat_id: { $in: user.chats } });
+        const chats = await Chat.find({
+            $or: [
+                { chat_id: { $in: user.chats } },
+                { chatid: { $in: user.chats } }
+            ]
+        });
         logger.debug('Chats loaded', { count: chats.length });
 
         return res.status(200).json({ chats });

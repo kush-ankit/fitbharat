@@ -224,7 +224,16 @@ export default (locationIO: Namespace, socket: Socket) => {
     // START RUN
     // ─────────────────────────────────────────────────────────
     socket.on("start-run", async ({ roomCode }: { roomCode: string }) => {
+        const authenticatedUser = (socket as any).user;
+        const userId = authenticatedUser?.user_id || authenticatedUser?.uid;
+
         if (rooms[roomCode]) {
+            if (rooms[roomCode].adminId !== userId) {
+                socket.emit("error", { message: "Unauthorized: Only the room admin can start the run." });
+                logger.warn(`User ${userId} attempted to start room ${roomCode} but is not the admin`);
+                return;
+            }
+
             try {
                 await Room.findOneAndUpdate(
                     { roomCode, status: 'STARTING' },

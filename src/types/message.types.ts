@@ -1,3 +1,5 @@
+import { Document } from "mongoose";
+
 export default interface IMessage extends Document {
     text_massage: string;
     sender_user_id: string;

@@ -14,6 +14,9 @@ const MessageSchema: Schema = new Schema({
     created_at: { type: Date, default: Date.now },
 });
 
+MessageSchema.index({ sender_user_id: 1, receiver_user_id: 1, created_at: -1 });
+MessageSchema.index({ receiver_user_id: 1, sender_user_id: 1, created_at: -1 });
+
 const Message = mongoose.models.Message || mongoose.model<IMessage>('Message', MessageSchema);
 
 export default Message;

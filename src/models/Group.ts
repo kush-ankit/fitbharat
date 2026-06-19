@@ -23,5 +23,7 @@ const GroupSchema: Schema = new Schema(
     { timestamps: true }
 );
 
+GroupSchema.index({ pathid: 1 });
+
 const Group = mongoose.models.Group || mongoose.model<IGroup>('Group', GroupSchema);
 export default Group;

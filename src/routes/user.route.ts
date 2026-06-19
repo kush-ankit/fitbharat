@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Response } from 'express';
 import { User } from '../models/User';
 import { verifyToken, AuthRequest } from '../middlewares/verifyToken';
 import DailyStep from '../models/dailyStep.model';
@@ -6,11 +6,14 @@ import logger from '../utils/logger';
 
 const router = express.Router();
 
+// Apply authentication middleware to all routes in this router
+router.use(verifyToken);
+
 // ─────────────────────────────────────────────────────────
 // GET /api/users/search?query=<string>
 // Find users by display name or email (case-insensitive)
 // ─────────────────────────────────────────────────────────
-router.get('/search', async (req: Request, res: Response) => {
+router.get('/search', async (req: AuthRequest, res: Response) => {
     try {
         const { query } = req.query as { query?: string };
 
@@ -61,7 +64,7 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 //   { userId, isoDate, steps }
 //   { userId, days: [{ isoDate, steps }, ...] }
 // ─────────────────────────────────────────────────────────
-router.post('/steps/sync', async (req: Request, res: Response) => {
+router.post('/steps/sync', async (req: AuthRequest, res: Response) => {
     try {
         const { userId, isoDate, steps, days } = req.body as {
             userId?: string;
@@ -72,6 +75,11 @@ router.post('/steps/sync', async (req: Request, res: Response) => {
 
         if (!userId || typeof userId !== 'string') {
             return res.status(400).json({ message: 'userId is required' });
+        }
+
+        // Security authorization check: only self or admin can sync steps
+        if (userId !== req.user!.uid && req.user!.role !== 'admin') {
+            return res.status(403).json({ message: 'Forbidden: You cannot sync steps for another user.' });
         }
 
         const entries: { isoDate: string; steps: number }[] = [];
@@ -124,12 +132,15 @@ router.post('/steps/sync', async (req: Request, res: Response) => {
 // Returns last 7 days of step data, oldest → newest (today last).
 // Shape: { days: [{ isoDate, steps }, ...7 entries] }
 // ─────────────────────────────────────────────────────────
-router.get('/weekly-steps', async (req: Request, res: Response) => {
+router.get('/weekly-steps', async (req: AuthRequest, res: Response) => {
     try {
         const { userId } = req.query as { userId?: string };
 
-        if (!userId) {
-            return res.status(400).json({ message: 'userId query parameter is required' });
+        const targetUserId = userId || req.user!.uid;
+
+        // Security authorization check: only self or admin can view step history
+        if (targetUserId !== req.user!.uid && req.user!.role !== 'admin') {
+            return res.status(403).json({ message: 'Forbidden: You cannot view other users\' step counts.' });
         }
 
         const days: { isoDate: string; steps: number }[] = [];
@@ -142,7 +153,7 @@ router.get('/weekly-steps', async (req: Request, res: Response) => {
         const dateKeys = days.map((d) => d.isoDate);
 
         const records = await DailyStep.find({
-            user_id: userId,
+            user_id: targetUserId,
             dateKey: { $in: dateKeys },
         }).select('dateKey steps');
 
@@ -171,7 +182,7 @@ router.get('/weekly-steps', async (req: Request, res: Response) => {
 // NOTE: these specific sub-paths must be declared BEFORE
 //       /leaderboard/friends/:userId to avoid route shadowing.
 // ─────────────────────────────────────────────────────────
-const globalLeaderboardHandler = async (_req: Request, res: Response) => {
+const globalLeaderboardHandler = async (_req: AuthRequest, res: Response) => {
     try {
         const users = await User.find({ isActive: true })
             .sort({ xp: -1 })
@@ -206,12 +217,17 @@ router.get('/leaderboard', globalLeaderboardHandler);
 // Fetch leaderboard restricted to a user's friend list
 // (friends are stored as UIDs in the `chats` array)
 // ─────────────────────────────────────────────────────────
-router.get('/leaderboard/friends/:userId', async (req: Request, res: Response) => {
+router.get('/leaderboard/friends/:userId', async (req: AuthRequest, res: Response) => {
     try {
         const { userId } = req.params;
 
         if (!userId) {
             return res.status(400).json({ message: 'userId param is required' });
+        }
+
+        // Security authorization check: only self or admin can view friends leaderboard
+        if (userId !== req.user!.uid && req.user!.role !== 'admin') {
+            return res.status(403).json({ message: 'Forbidden: You cannot view this leaderboard.' });
         }
 
         // Fetch the requesting user to get their friends list
@@ -254,7 +270,7 @@ router.get('/leaderboard/friends/:userId', async (req: Request, res: Response) =
 // PUT /api/users/profile/update
 // Update the authenticated user's physical metrics & prefs
 // ─────────────────────────────────────────────────────────
-router.put('/profile/update', verifyToken, async (req: AuthRequest, res: Response) => {
+router.put('/profile/update', async (req: AuthRequest, res: Response) => {
     logger.info('Updating user profile...');
     try {
         const { uid } = req.user!;
